@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#22b14c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Xocavar İçi">
+<title>Xocavar İçi</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3fdc6c"/><stop offset="1" stop-color="#169637"/></linearGradient>
+    <symbol id="i-logo" viewBox="0 0 64 56"><polygon fill="url(#lg)" points="2,2 18,2 32,22 46,2 62,2 40,28 62,54 46,54 32,34 18,54 2,54 24,28"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.5 12 3l9 8.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-orders" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3" style="stroke:var(--ln,currentColor)"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5s-8-4.9-8-11A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 8 2.5c0 6.1-8 11-8 11z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 13h18"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 17v2M19 17v2M3 17h18v-4l-2-5a2 2 0 0 0-2-1.5H7A2 2 0 0 0 5 8l-2 5z"/><path d="M7 13h2M15 13h2"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.3"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M14 8l4 4-4 4M18 12H9"/></symbol>
+    <symbol id="i-headset" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="2"/><rect x="17" y="14" width="4" height="6" rx="2"/><path d="M19 20c0 1.5-2 2-5 2"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3 8a3 3 0 0 1 3-3h11v3"/><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="16.5" cy="13.5" r="1.3" style="fill:#fff;stroke:#fff"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></symbol>
+    <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M3 12h6.5M14.5 12H21M12 14.5V21"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+    <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+  </defs>
+</svg>
+
+<!-- GİRİŞ / QEYDİYYAT -->
+<main id="auth" class="auth hide">
+  <div class="auth-in">
+    <div class="logo big"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div>
+    <div class="seg" id="authTabs">
+      <button class="on" data-act="authTab" data-v="in">Giriş</button>
+      <button data-act="authTab" data-v="up">Qeydiyyat</button>
+    </div>
+    <form id="fIn" class="form" autocomplete="on">
+      <label>E-poçt<input type="email" id="inEmail" required autocomplete="email" placeholder="ad@mail.com"></label>
+      <label>Şifrə<input type="password" id="inPass" required autocomplete="current-password" placeholder="Şifrənizi yazın"></label>
+      <p class="err" id="inErr"></p>
+      <button class="btn" type="submit" id="inBtn">Daxil ol</button>
+      <button class="link" type="button" data-act="forgot">Şifrəni unutmusunuz?</button>
+    </form>
+    <form id="fUp" class="form hide" autocomplete="on">
+      <label>Ad Soyad<input type="text" id="upName" required autocomplete="name" placeholder="Ad və soyad"></label>
+      <label>Telefon<input type="tel" id="upPhone" required autocomplete="tel" placeholder="+994 50 123 45 67"></label>
+      <label>E-poçt<input type="email" id="upEmail" required autocomplete="email" placeholder="ad@mail.com"></label>
+      <label>Şifrə<input type="password" id="upPass" required minlength="6" autocomplete="new-password" placeholder="Ən azı 6 simvol"></label>
+      <p class="err" id="upErr"></p>
+      <button class="btn" type="submit" id="upBtn">Qeydiyyatdan keç</button>
+    </form>
+  </div>
+</main>
+
+<!-- ƏSAS TƏTBİQ -->
+<div id="app" class="hide">
+  <div id="views">
+
+    <!-- ANA SƏHİFƏ -->
+    <section id="v-home" class="view on">
+      <div id="map"></div>
+      <div class="homehead"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div></div>
+      <button class="circ prof" data-act="tab" data-v="profile" aria-label="Profil"><svg class="ic fillic"><use href="#i-user"/></svg></button>
+      <button class="circ loc" data-act="locate" aria-label="Mənim mövqeyim"><svg class="ic"><use href="#i-locate"/></svg></button>
+      <div id="geoBanner" class="geob hide"><span id="geoMsg"></span><button data-act="geoRetry">Yenidən cəhd et</button></div>
+      <div class="sheet" id="sheet">
+        <h2>Hara gedirik?</h2>
+        <div class="srch"><svg class="ic"><use href="#i-search"/></svg><input id="q" placeholder="Gedəcəyiniz ünvanı yazın" autocomplete="off" enterkeyhint="search"><button class="xbtn hide" id="qx" data-act="clearDest" aria-label="Təmizlə"><svg class="ic"><use href="#i-x"/></svg></button></div>
+        <div id="qr" class="res hide"></div>
+        <div id="destRow" class="destrow hide"><svg class="ic"><use href="#i-pin"/></svg><span id="destTxt"></span><button data-act="saveFav" aria-label="Sevimlilərə əlavə et"><svg class="ic"><use href="#i-star"/></svg></button></div>
+        <div class="quick">
+          <div class="two">
+            <button class="chip" data-act="quick" data-k="home"><svg class="ic"><use href="#i-home"/></svg><span>Ev</span><svg class="ic sm"><use href="#i-chev"/></svg></button>
+            <button class="chip" data-act="quick" data-k="work"><svg class="ic"><use href="#i-briefcase"/></svg><span>İş</span><svg class="ic sm"><use href="#i-chev"/></svg></button>
+          </div>
+          <div class="three">
+            <button class="box" data-act="taxi"><svg class="ic big"><use href="#i-car"/></svg><span>Taksi</span></button>
+            <button class="box" data-act="trips"><svg class="ic big"><use href="#i-clock"/></svg><span>Səfərlər</span></button>
+            <button class="box" data-act="pay"><svg class="ic big"><use href="#i-card"/></svg><span>Ödəniş</span></button>
+          </div>
+        </div>
+        <button class="btn" data-act="order">Taksi çağır</button>
+      </div>
+    </section>
+
+    <!-- SİFARİŞLƏR -->
+    <section id="v-orders" class="view">
+      <header class="top"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div><button class="circ" data-act="tab" data-v="profile" aria-label="Profil"><svg class="ic fillic"><use href="#i-user"/></svg></button></header>
+      <div class="scroll">
+        <h1 class="pt">Sifarişlər</h1>
+        <div class="tabs" id="otabs">
+          <button class="on" data-act="otab" data-v="active"><svg class="ic"><use href="#i-car"/></svg>Aktiv</button>
+          <button data-act="otab" data-v="history"><svg class="ic"><use href="#i-clock"/></svg>Tarixçə</button>
+          <button data-act="otab" data-v="favs"><svg class="ic"><use href="#i-star"/></svg>Sevimlilər</button>
+        </div>
+        <div id="ordBody"></div>
+      </div>
+    </section>
+
+    <!-- SEVİMLİLƏR -->
+    <section id="v-favs" class="view">
+      <header class="top"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div><button class="circ" data-act="tab" data-v="profile" aria-label="Profil"><svg class="ic fillic"><use href="#i-user"/></svg></button></header>
+      <div class="scroll">
+        <h1 class="pt">Sevimlilər</h1>
+        <div id="favBody"></div>
+      </div>
+    </section>
+
+    <!-- PROFİL -->
+    <section id="v-profile" class="view">
+      <header class="top"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div><button class="circ" data-act="sub" data-n="settings" aria-label="Ayarlar"><svg class="ic"><use href="#i-gear"/></svg></button></header>
+      <div class="scroll" id="profBody"></div>
+    </section>
+
+    <!-- ALT SƏHİFƏLƏR -->
+    <section id="sub" class="view subview">
+      <header class="subtop"><button class="circ sm" data-act="back" aria-label="Geri"><svg class="ic"><use href="#i-back"/></svg></button><h3 id="subTitle"></h3><span class="sp"></span></header>
+      <div id="subBody" class="subbody"></div>
+    </section>
+  </div>
+
+  <nav id="nav">
+    <button class="on" data-act="tab" data-v="home"><svg class="ic"><use href="#i-home"/></svg><span>Ana səhifə</span></button>
+    <button data-act="tab" data-v="orders"><svg class="ic"><use href="#i-orders"/></svg><span>Sifarişlər</span></button>
+    <button data-act="tab" data-v="favs"><svg class="ic"><use href="#i-heart"/></svg><span>Sevimlilər</span></button>
+    <button data-act="tab" data-v="profile"><svg class="ic"><use href="#i-user"/></svg><span>Profil</span></button>
+  </nav>
+</div>
+
+<div id="modal" class="modal hide"><div class="mback" data-act="mclose"></div><div class="msheet" id="msheet"></div></div>
+<div id="toast" class="toast"></div>
+<div id="boot" class="boot"><svg class="lg"><use href="#i-logo"/></svg></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

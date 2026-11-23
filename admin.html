@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#22b14c">
+<meta name="robots" content="noindex,nofollow">
+<title>Xocavar İçi — Admin</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--g:#22b14c;--g2:#199a3d;--gl:#e6f6ea;--tx:#111827;--mut:#6b7280;--bd:#e5e7eb;--soft:#f3f4f6;--red:#e11d48;--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);background:#f8f9fa}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0;text-align:inherit}
+input,textarea{font:inherit;width:100%;padding:13px 15px;border:1.5px solid var(--bd);border-radius:14px;font-size:16px;outline:none;background:#fff}
+input:focus,textarea:focus{border-color:var(--g)}
+textarea{resize:none;min-height:90px}
+.hide{display:none!important}
+.lg{width:40px;height:35px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:21px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--g);color:#fff;font-weight:700;font-size:16px;padding:13px 20px;border-radius:999px;text-align:center;width:100%}
+.btn:active{background:var(--g2)}.btn[disabled]{opacity:.55}
+.btn.red{background:#fee2e2;color:var(--red)}.btn.ghost{background:var(--soft);color:var(--tx)}
+.err{color:var(--red);font-size:14px;margin:0}.err:empty{display:none}
+#login{min-height:100dvh;display:grid;place-items:center;padding:24px;background:#fff}
+#login form{width:100%;max-width:380px;display:flex;flex-direction:column;gap:14px}
+#login .logo{justify-content:center;font-size:28px;margin-bottom:6px}#login p.sub{text-align:center;color:var(--mut);margin:0 0 8px}
+label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600;color:#374151}
+header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #eee;padding:calc(10px + var(--sat)) 16px 0}
+.hrow{display:flex;align-items:center;justify-content:space-between;max-width:760px;margin:0 auto;padding-bottom:8px}
+.hrow small{color:var(--mut)}
+.out{font-weight:700;color:var(--red);font-size:14px}
+.tabs{display:flex;gap:8px;max-width:760px;margin:0 auto}
+.tabs button{flex:1;text-align:center;padding:12px 8px;font-weight:700;color:var(--mut);border-bottom:3px solid transparent;position:relative}
+.tabs button.on{color:var(--g);border-color:var(--g)}
+.dot{display:inline-block;min-width:20px;height:20px;border-radius:10px;background:var(--red);color:#fff;font-size:12px;line-height:20px;text-align:center;margin-left:6px;padding:0 5px}
+main{max-width:760px;margin:0 auto;padding:16px 16px calc(30px + var(--sab))}
+.chips{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto}
+.chips button{background:var(--soft);border-radius:999px;padding:9px 16px;font-weight:600;white-space:nowrap}
+.chips button.on{background:var(--g);color:#fff}
+.card{background:#fff;border:1px solid var(--bd);border-radius:18px;padding:14px 16px;margin-bottom:10px;display:block;width:100%}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.st{font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 10px;background:#fef3c7;color:#92400e;white-space:nowrap}
+.st.a{background:var(--gl);color:#15803d}.st.r{background:#fee2e2;color:var(--red)}
+.meta{color:var(--mut);font-size:13.5px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #f1f1f1;font-size:15px}.kv:last-child{border:0}.kv span{color:var(--mut)}.kv b{text-align:right;word-break:break-word}
+.back{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--g2);margin-bottom:12px}
+.empty{text-align:center;color:var(--mut);padding:40px 10px}
+.actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.actions .btn{flex:1;min-width:140px}
+.chat{background:#fff;border:1px solid var(--bd);border-radius:18px;height:calc(100dvh - 300px);min-height:300px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:80%;padding:10px 14px;border-radius:18px;font-size:15.5px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
+.msg small{display:block;font-size:11px;opacity:.65;margin-top:3px}
+.msg.a{align-self:flex-end;background:var(--g);color:#fff;border-bottom-right-radius:6px}
+.msg.u{align-self:flex-start;background:var(--soft);border-bottom-left-radius:6px}
+.cform{display:flex;gap:10px;margin-top:10px}.cform .btn{width:auto;padding:0 22px}
+.toast{position:fixed;left:50%;bottom:calc(24px + var(--sab));transform:translate(-50%,20px);background:#111827;color:#fff;padding:12px 18px;border-radius:14px;font-size:14.5px;opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:90%;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3fdc6c"/><stop offset="1" stop-color="#169637"/></linearGradient><symbol id="logo" viewBox="0 0 64 56"><polygon fill="url(#lg)" points="2,2 18,2 32,22 46,2 62,2 40,28 62,54 46,54 32,34 18,54 2,54 24,28"/></symbol></defs></svg>
+
+<div id="boot" style="position:fixed;inset:0;background:#fff;display:grid;place-items:center;z-index:100"><svg class="lg" style="width:80px;height:70px"><use href="#logo"/></svg></div>
+
+<section id="login" class="hide">
+  <form id="lf">
+    <div class="logo"><svg class="lg"><use href="#logo"/></svg>Xocavar İçi</div>
+    <p class="sub">Admin paneli</p>
+    <label>E-poçt<input type="email" id="le" required autocomplete="username"></label>
+    <label>Şifrə<input type="password" id="lp" required autocomplete="current-password"></label>
+    <p class="err" id="lerr"></p>
+    <button class="btn" id="lb">Daxil ol</button>
+  </form>
+</section>
+
+<div id="panel" class="hide">
+  <header>
+    <div class="hrow"><div class="logo"><svg class="lg"><use href="#logo"/></svg><div>Admin<br><small id="who"></small></div></div><button class="out" id="logout">Çıxış</button></div>
+    <div class="tabs"><button class="on" data-t="apps">Ərizələr<span class="dot hide" id="dApps"></span></button><button data-t="sup">Dəstək<span class="dot hide" id="dSup"></span></button></div>
+  </header>
+  <main id="main"></main>
+</div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { auth, db } from "./firebase.js";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { ref, onValue, get, update, push, serverTimestamp, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+const fmtT = t => { if (!t) return ""; const d = new Date(t); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+let tt; const toast = m => { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 2800); };
+const ERR = { "auth/invalid-credential": "E-poçt və ya şifrə yanlışdır.", "auth/wrong-password": "E-poçt və ya şifrə yanlışdır.", "auth/user-not-found": "Hesab tapılmadı.", "auth/invalid-email": "E-poçt düzgün deyil.", "auth/too-many-requests": "Çox cəhd edildi. Bir az sonra yenidən yoxlayın.", "auth/network-request-failed": "İnternet bağlantısı yoxdur." };
+const ST = { pending: ["", "Gözləyir"], approved: ["a", "Qəbul"], rejected: ["r", "Rədd"] };
+
+const S = { tab: "apps", filter: "pending", apps: {}, sup: {}, view: null, uid: null, unsubs: [], chatUn: null };
+
+/* ----- Giriş ----- */
+$("#lf").addEventListener("submit", async e => {
+  e.preventDefault(); $("#lb").disabled = true; $("#lerr").textContent = "";
+  try { await signInWithEmailAndPassword(auth, $("#le").value.trim(), $("#lp").value); }
+  catch (er) { $("#lerr").textContent = ERR[er.code] || "Giriş alınmadı. Yenidən cəhd edin."; }
+  $("#lb").disabled = false;
+});
+$("#logout").addEventListener("click", () => signOut(auth));
+
+let denied = false;
+onAuthStateChanged(auth, async u => {
+  $("#boot").classList.add("hide");
+  S.unsubs.forEach(f => f()); S.unsubs = []; if (S.chatUn) { S.chatUn(); S.chatUn = null; }
+  if (!u) {
+    S.uid = null; $("#panel").classList.add("hide"); $("#login").classList.remove("hide");
+    if (denied) { $("#lerr").textContent = "Bu hesabın admin girişinə icazəsi yoxdur."; denied = false; }
+    return;
+  }
+  let ok = false;
+  try { ok = (await get(ref(db, `admins/${u.uid}`))).val() === true; } catch (e) { ok = false; }
+  if (!ok) { denied = true; await signOut(auth); return; }
+  S.uid = u.uid; $("#who").textContent = u.email;
+  $("#login").classList.add("hide"); $("#panel").classList.remove("hide");
+  S.unsubs.push(onValue(ref(db, "driver_applications"), s => { S.apps = s.val() || {}; updateDots(); if (S.tab === "apps" && !S.view) render(); }, () => toast("Ərizələr yüklənmədi.")));
+  S.unsubs.push(onValue(ref(db, "support"), s => {
+    const v = s.val() || {}; S.sup = {};
+    Object.entries(v).forEach(([id, x]) => { S.sup[id] = x.meta || {}; });
+    updateDots(); if (S.tab === "sup" && !S.view) render();
+  }, () => toast("Dəstək söhbətləri yüklənmədi.")));
+  render();
+});
+
+$$(".tabs button").forEach(b => b.addEventListener("click", () => { S.tab = b.dataset.t; S.view = null; if (S.chatUn) { S.chatUn(); S.chatUn = null; } $$(".tabs button").forEach(x => x.classList.toggle("on", x === b)); render(); }));
+function updateDots() {
+  const p = Object.values(S.apps).filter(a => a.status === "pending").length;
+  const u = Object.values(S.sup).filter(m => m.unreadAdmin === true).length;
+  [["#dApps", p], ["#dSup", u]].forEach(([s, n]) => { $(s).textContent = n; $(s).classList.toggle("hide", !n); });
+}
+
+function render() {
+  if (S.tab === "apps") S.view ? appDetail(S.view) : appList(); else S.view ? chatView(S.view) : supList();
+}
+
+/* ----- Ərizələr ----- */
+function appList() {
+  const list = Object.entries(S.apps).map(([id, a]) => ({ id, ...a })).filter(a => S.filter === "all" || a.status === S.filter).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const F = [["pending", "Gözləyən"], ["approved", "Qəbul"], ["rejected", "Rədd"], ["all", "Hamısı"]];
+  $("#main").innerHTML = `<div class="chips">${F.map(([k, n]) => `<button data-f="${k}" class="${S.filter === k ? "on" : ""}">${n}</button>`).join("")}</div>` +
+    (list.length ? list.map(a => `<button class="card" data-id="${esc(a.id)}"><div class="row"><b>${esc(a.fullName)}</b><span class="st ${(ST[a.status] || [""])[0]}">${(ST[a.status] || ["", a.status])[1]}</span></div><div class="meta">${esc(a.make)} ${esc(a.model)} · ${esc(a.plate)} · ${esc(a.city)}</div><div class="meta">${fmtT(a.createdAt)}</div></button>`).join("") : '<div class="empty">Bu bölmədə ərizə yoxdur.</div>');
+  $$("[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; appList(); });
+  $$(".card[data-id]").forEach(b => b.onclick = () => { S.view = b.dataset.id; render(); });
+}
+function appDetail(id) {
+  const a = S.apps[id]; if (!a) { S.view = null; render(); return; }
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`;
+  $("#main").innerHTML = `<button class="back" id="bk">‹ Geri</button><div class="card">
+    <div class="row"><b style="font-size:19px">${esc(a.fullName)}</b><span class="st ${(ST[a.status] || [""])[0]}">${(ST[a.status] || ["", a.status])[1]}</span></div>
+    ${kv("Telefon", a.phone)}${kv("E-poçt", a.email)}${kv("Şəhər / rayon", a.city)}${kv("Marka", a.make)}${kv("Model", a.model)}${kv("İl", a.year)}${kv("Rəng", a.color)}${kv("Dövlət nömrəsi", a.plate)}${kv("Vəsiqə nömrəsi", a.license)}${kv("Göndərilib", fmtT(a.createdAt))}
+    ${a.status === "rejected" ? kv("Rədd səbəbi", a.reason || "—") : ""}${a.reviewedAt ? kv("Baxılıb", fmtT(a.reviewedAt)) : ""}</div>
+    <div class="actions"><button class="btn" id="ok" ${a.status === "approved" ? "disabled" : ""}>Qəbul et</button><button class="btn red" id="no" ${a.status === "rejected" ? "disabled" : ""}>Rədd et</button></div>
+    <div id="rej" class="hide" style="margin-top:14px"><label>Rədd səbəbi<textarea id="rs" maxlength="300" placeholder="Səbəbi yazın…"></textarea></label><p class="err" id="re"></p><button class="btn red" id="rc" style="margin-top:10px">Rədd etməni təsdiqlə</button></div>
+    <button class="btn ghost" id="ch" style="margin-top:12px">Dəstək söhbətini aç</button>`;
+  $("#bk").onclick = () => { S.view = null; render(); };
+  $("#ch").onclick = () => { S.tab = "sup"; $$(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.t === "sup")); S.view = id; render(); };
+  $("#ok").onclick = async () => {
+    try { await update(ref(db, `driver_applications/${id}`), { status: "approved", reason: null, reviewedAt: serverTimestamp(), reviewedBy: S.uid }); toast("Ərizə qəbul edildi."); } catch (e) { toast("Əməliyyat alınmadı."); }
+  };
+  $("#no").onclick = () => $("#rej").classList.toggle("hide");
+  $("#rc").onclick = async () => {
+    const r = $("#rs").value.trim(); if (r.length < 3) { $("#re").textContent = "Rədd səbəbini yazın."; return; }
+    try { await update(ref(db, `driver_applications/${id}`), { status: "rejected", reason: r, reviewedAt: serverTimestamp(), reviewedBy: S.uid }); toast("Ərizə rədd edildi."); } catch (e) { toast("Əməliyyat alınmadı."); }
+  };
+}
+
+/* ----- Dəstək ----- */
+function supList() {
+  const l = Object.entries(S.sup).map(([id, m]) => ({ id, ...m })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  $("#main").innerHTML = l.length ? l.map(m => `<button class="card" data-id="${esc(m.id)}"><div class="row"><b>${esc(m.name || m.email || m.id)}${m.unreadAdmin ? '<span class="dot">!</span>' : ""}</b><span class="meta">${fmtT(m.ts)}</span></div><div class="meta">${esc(m.email || "")}</div><div style="margin-top:4px;${m.unreadAdmin ? "font-weight:700" : ""}">${esc(m.last || "")}</div></button>`).join("") : '<div class="empty">Hələ söhbət yoxdur.</div>';
+  $$(".card[data-id]").forEach(b => b.onclick = () => { S.view = b.dataset.id; render(); });
+}
+function chatView(uid) {
+  const m = S.sup[uid] || {};
+  $("#main").innerHTML = `<button class="back" id="bk">‹ Geri</button><div class="row" style="margin-bottom:10px"><b>${esc(m.name || uid)}</b><span class="meta">${esc(m.email || "")}</span></div>
+    <div class="chat" id="chat"></div><form class="cform" id="cf"><input id="ci" maxlength="1000" placeholder="Cavab yazın…" autocomplete="off"><button class="btn">Göndər</button></form>`;
+  $("#bk").onclick = () => { if (S.chatUn) { S.chatUn(); S.chatUn = null; } S.view = null; render(); };
+  const chat = $("#chat");
+  if (S.chatUn) S.chatUn();
+  S.chatUn = onValue(query(ref(db, `support/${uid}/messages`), limitToLast(200)), snap => {
+    const arr = []; snap.forEach(c => { arr.push(c.val()); });
+    chat.innerHTML = arr.map(x => `<div class="msg ${x.from === "admin" ? "a" : "u"}">${esc(x.text)}<small>${fmtT(x.ts)}</small></div>`).join("") || '<div class="empty">Mesaj yoxdur.</div>';
+    chat.scrollTop = chat.scrollHeight;
+    if (arr.length && arr[arr.length - 1].from === "user") update(ref(db, `support/${uid}/meta`), { unreadAdmin: false }).catch(() => { });
+  }, () => toast("Söhbət yüklənmədi."));
+  update(ref(db, `support/${uid}/meta`), { unreadAdmin: false }).catch(() => { });
+  $("#cf").addEventListener("submit", async e => {
+    e.preventDefault(); const t = $("#ci").value.trim(); if (!t) return; $("#ci").value = "";
+    try {
+      await push(ref(db, `support/${uid}/messages`), { from: "admin", text: t, ts: serverTimestamp() });
+      await update(ref(db, `support/${uid}/meta`), { last: t.slice(0, 120), ts: serverTimestamp(), unreadAdmin: false });
+    } catch (er) { toast("Mesaj göndərilmədi."); $("#ci").value = t; }
+  });
+}
+</script>
+</body>
+</html>
