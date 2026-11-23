@@ -154,7 +154,7 @@ function appDetail(id) {
   const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`;
   $("#main").innerHTML = `<button class="back" id="bk">‹ Geri</button><div class="card">
     <div class="row"><b style="font-size:19px">${esc(a.fullName)}</b><span class="st ${(ST[a.status] || [""])[0]}">${(ST[a.status] || ["", a.status])[1]}</span></div>
-    ${kv("Telefon", a.phone)}${kv("E-poçt", a.email)}${kv("Şəhər / rayon", a.city)}${kv("Marka", a.make)}${kv("Model", a.model)}${kv("İl", a.year)}${kv("Rəng", a.color)}${kv("Dövlət nömrəsi", a.plate)}${kv("Vəsiqə nömrəsi", a.license)}${kv("Göndərilib", fmtT(a.createdAt))}
+    <div class="kv"><span>Telefon</span><b>${esc(a.phone)} <a href="tel:${esc(a.phone)}" style="color:var(--g2)">📞 Zəng et</a></b></div>${kv("E-poçt", a.email)}${kv("Şəhər / rayon", a.city)}${kv("Marka", a.make)}${kv("Model", a.model)}${kv("İl", a.year)}${kv("Rəng", a.color)}${kv("Dövlət nömrəsi", a.plate)}${kv("Vəsiqə nömrəsi", a.license)}${kv("Göndərilib", fmtT(a.createdAt))}
     ${a.status === "rejected" ? kv("Rədd səbəbi", a.reason || "—") : ""}${a.reviewedAt ? kv("Baxılıb", fmtT(a.reviewedAt)) : ""}</div>
     <div class="actions"><button class="btn" id="ok" ${a.status === "approved" ? "disabled" : ""}>Qəbul et</button><button class="btn red" id="no" ${a.status === "rejected" ? "disabled" : ""}>Rədd et</button></div>
     <div id="rej" class="hide" style="margin-top:14px"><label>Rədd səbəbi<textarea id="rs" maxlength="300" placeholder="Səbəbi yazın…"></textarea></label><p class="err" id="re"></p><button class="btn red" id="rc" style="margin-top:10px">Rədd etməni təsdiqlə</button></div>
@@ -179,7 +179,7 @@ function supList() {
 }
 function chatView(uid) {
   const m = S.sup[uid] || {};
-  $("#main").innerHTML = `<button class="back" id="bk">‹ Geri</button><div class="row" style="margin-bottom:10px"><b>${esc(m.name || uid)}</b><span class="meta">${esc(m.email || "")}</span></div>
+  $("#main").innerHTML = `<button class="back" id="bk">‹ Geri</button><div class="row" style="margin-bottom:10px"><b>${esc(m.name || uid)}</b><span class="meta">${esc(m.email || "")}</span></div>${m.phone ? `<div style="margin-bottom:10px"><a class="btn ghost" href="tel:${esc(m.phone)}">📞 ${esc(m.phone)}</a></div>` : ""}
     <div class="chat" id="chat"></div><form class="cform" id="cf"><input id="ci" maxlength="1000" placeholder="Cavab yazın…" autocomplete="off"><button class="btn">Göndər</button></form>`;
   $("#bk").onclick = () => { if (S.chatUn) { S.chatUn(); S.chatUn = null; } S.view = null; render(); };
   const chat = $("#chat");

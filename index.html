@@ -48,6 +48,9 @@
     <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M3 12h6.5M14.5 12H21M12 14.5V21"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></symbol>
+    <symbol id="i-nav" viewBox="0 0 24 24"><path d="M12 3 20 20l-8-4-8 4z"/></symbol>
     <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
   </defs>
 </svg>
@@ -87,9 +90,11 @@
       <div id="map"></div>
       <div class="homehead"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><span>Xocavar İçi</span></div></div>
       <button class="circ prof" data-act="tab" data-v="profile" aria-label="Profil"><svg class="ic fillic"><use href="#i-user"/></svg></button>
+      <button class="drvpill hide" id="drvPill" data-act="sub" data-n="driverpanel"><svg class="ic"><use href="#i-wheel"/></svg><span>Sifarişlər</span><b class="cnt hide" id="drvCnt">0</b></button>
       <button class="circ loc" data-act="locate" aria-label="Mənim mövqeyim"><svg class="ic"><use href="#i-locate"/></svg></button>
       <div id="geoBanner" class="geob hide"><span id="geoMsg"></span><button data-act="geoRetry">Yenidən cəhd et</button></div>
       <div class="sheet" id="sheet">
+        <button class="handle" id="sheetHandle" data-act="sheetToggle" aria-label="Paneli aç/bağla"><i></i></button>
         <h2>Hara gedirik?</h2>
         <div class="srch"><svg class="ic"><use href="#i-search"/></svg><input id="q" placeholder="Gedəcəyiniz ünvanı yazın" autocomplete="off" enterkeyhint="search"><button class="xbtn hide" id="qx" data-act="clearDest" aria-label="Təmizlə"><svg class="ic"><use href="#i-x"/></svg></button></div>
         <div id="qr" class="res hide"></div>

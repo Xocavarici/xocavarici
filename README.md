@@ -49,3 +49,36 @@ Tüm dosyalar **aynı klasörde** durmalı. Build aracı gerekmez.
 - Admin Dəstək listesi `support` kökünü okur; çok sayıda mesaj birikirse yavaşlayabilir (sonradan sohbet özetlerini ayrı tutmak gerekir, bunun için yeni kural yolu lazım).
 - Nominatim ücretsiz ve yoğun kullanıma uygun değildir; kullanıcı sayısı artarsa ücretli bir geocoding servisine geç.
 - Ekran görüntülerindeki sahte taksi ikonları bilerek konmadı; canlı şoför takibi eklenince gerçek veriyle gösterilecek.
+
+---
+
+# v2 Güncellemesi (ÖNEMLİ: önce Firebase kurallarını güncelle)
+
+v2 yeni özellikler için **iki yeni veri yolu** kullanır: `live_orders` (sürücülərin gördüyü açık sifarişlər, telefonsuz) və `order_private` (müştəri/sürücü telefonu + sifariş söhbəti). Mevcut kurallar aynen duruyor, sadece bu ikisi eklendi. Dosya: `database.rules.json`.
+
+## Kuralları yayınla
+1. Firebase Console → Realtime Database → **Rules** sekmesi.
+2. `database.rules.json` içindeki tüm metni kopyalayıp yapıştır → **Publish**.
+Bunu yapmazsan sifariş sürücülərə göndərilməz (müştəriyə uyarı çıkar), sürücü paneli boş kalır.
+
+## Yenilikler
+- Harita: CARTO "API key required" hatası vardı; OpenStreetMap karolarına geçildi.
+- Hara gedirik paneli: yer seçince küçülür (sadece arama + Taksi çağır). Tutamacı (üstteki gri çizgi) çekerek/dokunarak aç-kapa.
+- **Şoför paneli:** qəbul edilmiş sürücü Profil'de "Şoför paneli" görür (haritada da yeşil "Sifarişlər" düğməsi). Açık sifarişler: neçə dəqiqə əvvəl, haradan, hara, qiymət, sizdən uzaqlıq. **Qəbul et** ilə sifariş götürülür (ilk basan alır).
+- **Arama:** müşteri sürücünün, sürücü müştərinin telefonunu görür; "Zəng et" doğrudan telefon uygulamasını açar. Admin panelinde de zəng düğməsi var.
+- **Mesajlaşma:** sifariş kabul edilince müşteri ve sürücü arasında canlı sohbet, yeni mesajda bildirim.
+- Sürücü: Tamamla, İmtina et, Götürmə yeri / Təyinat için Google Maps yol tarifi.
+- 30 dəqiqədən köhnə açık sifarişlər sürücü listesinde gösterilmez.
+
+## Güncellemeyi GitHub'a yükle (Termux)
+```
+cd ~/xocavarici
+unzip -o ~/storage/downloads/xocavar-ici-v2.zip
+git add . && git commit -m "v2" 
+git push https://KULLANICI:TOKEN@github.com/muradhasanov4400-droid/xocavarici.git main
+```
+Sonra telefonda siteyi aç, sayfayı yenile (gerekirse tarayıcıda siteyi kapatıp aç; service worker v2 yüklenir).
+
+## Sınırlar
+- Sürücü şu an yalnız kabul etmiş ərizəsi olan hesapla görür; canlı şoför takibi ve otomatik eşleştirme hâlâ yok.
+- Gerçek "aranma" telefon uygulaması üzerinden yapılır (tel: bağlantısı), uygulama içi sesli arama değildir.

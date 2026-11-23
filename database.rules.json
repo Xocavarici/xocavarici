@@ -1,0 +1,51 @@
+{
+  "rules": {
+    "admins": {
+      "$uid": { ".read": "auth.uid === $uid", ".write": false }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth.uid === $uid"
+      }
+    },
+    "driver_applications": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "(auth.uid === $uid && !data.exists()) || root.child('admins/'+auth.uid).val() === true",
+        "status": {
+          ".validate": "newData.val() === 'pending' || root.child('admins/'+auth.uid).val() === true"
+        }
+      }
+    },
+    "support": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true"
+      }
+    },
+    "orders": {
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth.uid === $uid"
+      }
+    },
+    "live_orders": {
+      ".indexOn": ["status", "driverId"],
+      ".read": "root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' || root.child('admins/'+auth.uid).val() === true",
+      "$id": {
+        ".read": "data.child('uid').val() === auth.uid",
+        ".write": "auth.uid != null && ((!data.exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'open') || (data.child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid) || (root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' && (data.child('status').val() === 'open' || data.child('driverId').val() === auth.uid) && newData.child('uid').val() === data.child('uid').val()) || root.child('admins/'+auth.uid).val() === true)"
+      }
+    },
+    "order_private": {
+      "$id": {
+        ".read": "data.child('uid').val() === auth.uid || data.child('driverId').val() === auth.uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth.uid != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || data.child('uid').val() === auth.uid || data.child('driverId').val() === auth.uid || (root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' && root.child('live_orders/'+$id+'/driverId').val() === auth.uid) || root.child('admins/'+auth.uid).val() === true)",
+        "uid": { ".validate": "!data.exists() || newData.val() === data.val()" }
+      }
+    }
+  }
+}

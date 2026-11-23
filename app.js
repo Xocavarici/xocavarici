@@ -1,6 +1,6 @@
 import { auth, db } from "./firebase.js";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { ref, onValue, set, update, push, remove, serverTimestamp, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+import { ref, onValue, set, update, push, remove, serverTimestamp, query, limitToLast, orderByChild, equalTo, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
 /* ---------- Köməkçilər ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -10,8 +10,24 @@ const ic = (n, c = "") => `<svg class="ic ${c}"><use href="#i-${n}"/></svg>`;
 const pad = n => String(n).padStart(2, "0");
 const fmtT = t => { if (!t) return ""; const d = new Date(t); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const money = n => Number(n || 0).toFixed(2) + " ₼";
+const now = () => Date.now() + (S.off || 0);
+const ago = t => {
+  if (!t) return "indicə";
+  const s = Math.max(0, Math.floor((now() - t) / 1000));
+  if (s < 60) return "indicə";
+  const m = Math.floor(s / 60); if (m < 60) return m + " dəq əvvəl";
+  const h = Math.floor(m / 60); if (h < 24) return h + " saat əvvəl";
+  return Math.floor(h / 24) + " gün əvvəl";
+};
+const telHref = p => {
+  let d = String(p || "").replace(/[^\d+]/g, ""); if (!d) return "";
+  if (d[0] !== "+") { if (d.startsWith("994")) d = "+" + d; else if (d[0] === "0") d = "+994" + d.slice(1); }
+  return "tel:" + d;
+};
+const callBtn = (p, label = "Zəng et") => telHref(p) ? `<a class="callbtn" href="${esc(telHref(p))}">${ic("phone")} ${label}</a>` : "";
+const navUrl = p => `https://www.google.com/maps/dir/?api=1&destination=${Number(p && p.lat)},${Number(p && p.lon)}`;
 let tt;
-function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 2800); }
+function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3000); }
 
 const AUTH_ERR = {
   "auth/invalid-email": "E-poçt ünvanı düzgün deyil.",
@@ -35,12 +51,23 @@ const PROMOS = {
 };
 const CLASSES = { econ: { n: "Ekonom", m: 1, d: "Sərfəli və rahat" }, comf: { n: "Komfort", m: 1.3, d: "Geniş və rahat avtomobil" }, biz: { n: "Biznes", m: 1.7, d: "Premium sinif" } };
 const PAYS = { cash: "Nağd", bal: "Balans" };
+const FRESH_MS = 30 * 60 * 1000; // 30 dəqiqədən köhnə açıq sifarişlər sürücü siyahısında göstərilmir
 
 /* ---------- Vəziyyət ---------- */
-const S = { user: null, profile: {}, orders: {}, app: null, dest: null, pos: null, cls: "econ", pay: "cash", otab: "active", unsubs: [], registering: false, sub: null, subUn: null };
+const S = {
+  user: null, profile: {}, orders: {}, app: null, dest: null, pos: null, cls: "econ", pay: "cash", otab: "active",
+  unsubs: [], registering: false, sub: null, subUn: null, back: null, chatCtx: null, off: 0,
+  live: {}, priv: {}, watched: new Set(), seen: {}, unread: {},
+  dOpen: {}, dMine: {}, dPriv: {}, drvOn: false, dErr: false
+};
 let map, meMarker, accCircle, destMarker, mapReady = false, firstFix = false, watchId = null, installEv = null;
+let drvUns = [], drvPriv = {};
 
-function detach() { S.unsubs.forEach(u => { try { u(); } catch (e) { } }); S.unsubs = []; }
+function detach() {
+  S.unsubs.forEach(u => { try { u(); } catch (e) { } }); S.unsubs = [];
+  stopDriverFeed();
+  S.watched = new Set(); S.live = {}; S.priv = {}; S.seen = {}; S.unread = {};
+}
 function listen(r, cb) { const u = onValue(r, cb, () => toast("Məlumat oxunarkən xəta baş verdi.")); S.unsubs.push(u); }
 
 /* ---------- Giriş / qeydiyyat ---------- */
@@ -49,12 +76,13 @@ onAuthStateChanged(auth, u => {
   detach();
   if (!u) {
     S.user = null; S.profile = {}; S.orders = {}; S.app = null;
-    closeSub(); closeModal(); stopGeo();
+    closeSub(); closeModal(); stopGeo(); updatePill();
     $("#auth").classList.remove("hide"); $("#app").classList.add("hide");
     return;
   }
   S.user = u;
   $("#auth").classList.add("hide"); $("#app").classList.remove("hide");
+  S.unsubs.push(onValue(ref(db, ".info/serverTimeOffset"), s => { S.off = s.val() || 0; }));
   listen(ref(db, `users/${u.uid}`), s => {
     if (!s.exists()) {
       if (!S.registering) set(ref(db, `users/${u.uid}`), { name: u.displayName || "", email: u.email || "", phone: "", balance: 0, createdAt: serverTimestamp() }).catch(() => { });
@@ -67,7 +95,7 @@ onAuthStateChanged(auth, u => {
   listen(ref(db, `driver_applications/${u.uid}`), s => {
     const prev = S.app && S.app.status;
     S.app = s.exists() ? s.val() : null;
-    renderProfile();
+    syncDriverFeed(); renderProfile(); updatePill();
     if ((S.app && S.app.status) !== prev) refreshSub("driver");
   });
   requestAnimationFrame(() => { if (!mapReady) initMap(); else { map.invalidateSize(); startGeo(); } });
@@ -116,6 +144,7 @@ const A = {
   locate: () => { if (S.pos && map) map.setView([S.pos.lat, S.pos.lon], 16); else { toast("Konum hələ müəyyən edilməyib."); startGeo(); } },
   geoRetry: () => { stopGeo(); firstFix = false; startGeo(); },
   clearDest: () => { clearDest(); },
+  sheetToggle: () => setCompact(!$("#sheet").classList.contains("compact")),
   saveFav: async () => {
     if (!S.dest) return;
     try { await push(ref(db, `users/${S.user.uid}/favorites`), { name: S.dest.text, lat: S.dest.lat, lon: S.dest.lon }); toast("Sevimlilərə əlavə edildi."); } catch (e) { toast(dbMsg(e)); }
@@ -132,10 +161,16 @@ const A = {
   otab: b => { S.otab = b.dataset.v; renderOrders(); },
   cancelOrder: async b => {
     if (!(await ask("Sifarişi ləğv etmək istəyirsiniz?", "Bəli, ləğv et"))) return;
-    try { await update(ref(db, `orders/${S.user.uid}/${b.dataset.id}`), { status: "cancelled", cancelledAt: serverTimestamp() }); toast("Sifariş ləğv edildi."); } catch (e) { toast(dbMsg(e)); }
+    const id = b.dataset.id, uid = S.user.uid;
+    try {
+      const l = S.live[id];
+      if (l && (l.status === "open" || l.status === "accepted")) await update(ref(db, `live_orders/${id}`), { status: "cancelled", cancelledAt: serverTimestamp() });
+      await update(ref(db, `orders/${uid}/${id}`), { status: "cancelled", cancelledAt: serverTimestamp() });
+      toast("Sifariş ləğv edildi.");
+    } catch (e) { toast(dbMsg(e)); }
   },
   sub: b => openSub(b.dataset.n),
-  back: () => closeSub(),
+  back: () => { const b = S.back; S.back = null; closeSub(); if (b) openSub(b); },
   goto: b => {
     const k = b.dataset.k; let a;
     if (k === "fav") a = (S.profile.favorites || {})[b.dataset.id]; else a = S.profile[k];
@@ -162,7 +197,29 @@ const A = {
     const v = !(S.profile.settings && S.profile.settings.notifications === false);
     try { await update(ref(db, `users/${S.user.uid}/settings`), { notifications: !v }); } catch (e) { toast(dbMsg(e)); }
   },
-  supportRejected: () => openSub("support", "Salam! Şoför ərizəm rədd edilib. Zəhmət olmasa səbəbi izah edin və yenidən müraciət etmək üçün kömək edin.")
+  supportRejected: () => openSub("support", "Salam! Şoför ərizəm rədd edilib. Zəhmət olmasa səbəbi izah edin və yenidən müraciət etmək üçün kömək edin."),
+  chat: b => {
+    const oid = b.dataset.oid, role = b.dataset.role; let name, phone;
+    if (role === "customer") { const l = S.live[oid] || {}, pv = S.priv[oid] || {}; name = l.driverName || pv.driverName || "Sürücü"; phone = pv.driverPhone; }
+    else { const pv = S.dPriv[oid] || {}, l = S.dMine[oid] || {}; name = pv.customerName || l.name || "Müştəri"; phone = pv.customerPhone; }
+    S.unread[oid] = false;
+    if (S.sub === "driverpanel") S.back = "driverpanel";
+    openSub("ochat", { oid, role, name, phone });
+  },
+  accept: b => acceptOrder(b.dataset.oid),
+  finish: async b => {
+    if (!(await ask("Səfəri tamamladınız?", "Bəli, tamamla"))) return;
+    try { await update(ref(db, `live_orders/${b.dataset.oid}`), { status: "completed", completedAt: serverTimestamp() }); toast("Səfər tamamlandı."); } catch (e) { toast(dbMsg(e)); }
+  },
+  release: async b => {
+    if (!(await ask("Bu sifarişdən imtina etmək istəyirsiniz?", "Bəli, imtina et"))) return;
+    const id = b.dataset.oid;
+    try {
+      await update(ref(db, `order_private/${id}`), { driverId: null, driverName: null, driverPhone: null });
+      await update(ref(db, `live_orders/${id}`), { status: "open", driverId: null, driverName: null, car: null, acceptedAt: null });
+      toast("Sifarişdən imtina etdiniz.");
+    } catch (e) { toast(dbMsg(e)); }
+  }
 };
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
@@ -186,14 +243,13 @@ function initMap() {
   mapReady = true;
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView([40.4093, 49.8671], 14);
   map.attributionControl.setPrefix(false);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd", attribution: "&copy; OpenStreetMap &copy; CARTO" }).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
   map.on("click", e => setDestFromMap(e.latlng));
-  if ("ResizeObserver" in window) {
-    new ResizeObserver(() => { map.invalidateSize(); $("#v-home").style.setProperty("--sheet-h", $("#sheet").offsetHeight + "px"); }).observe($("#sheet"));
-  }
-  $("#v-home").style.setProperty("--sheet-h", $("#sheet").offsetHeight + "px");
+  if ("ResizeObserver" in window) new ResizeObserver(syncSheetH).observe($("#sheet"));
+  syncSheetH();
   startGeo();
 }
+function syncSheetH() { if (map) map.invalidateSize(); $("#v-home").style.setProperty("--sheet-h", $("#sheet").offsetHeight + "px"); }
 function geoBanner(msg) { const b = $("#geoBanner"); if (!msg) { b.classList.add("hide"); return; } $("#geoMsg").textContent = msg; b.classList.remove("hide"); }
 function startGeo() {
   if (watchId !== null) return;
@@ -215,6 +271,7 @@ function onPos(p) {
   drawMe(S.pos.lat, S.pos.lon, S.pos.acc);
   geoBanner("");
   if (!firstFix) { firstFix = true; map.setView([S.pos.lat, S.pos.lon], 16); }
+  if (S.dest) renderDestInfo();
 }
 function onGeoErr(e) {
   if (e.code === 1) {
@@ -290,33 +347,50 @@ async function saveAddr(k, d) {
   try { await set(ref(db, `users/${S.user.uid}/${k}`), { name: d.text, lat: d.lat, lon: d.lon }); toast((k === "home" ? "Ev" : "İş") + " ünvanı yadda saxlanıldı."); } catch (e) { toast(dbMsg(e)); }
 }
 
-/* ---------- Hədəf ---------- */
+/* ---------- Hədəf və alt panel ---------- */
+function setCompact(on) { $("#sheet").classList.toggle("compact", on); setTimeout(syncSheetH, 60); }
+(function sheetSwipe() {
+  const h = $("#sheetHandle"); let y0 = null;
+  h.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
+  h.addEventListener("touchend", e => {
+    if (y0 === null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
+    if (dy > 25) setCompact(true); else if (dy < -25) setCompact(false);
+  });
+})();
 function setDest(d) {
   S.dest = d;
-  const pinHtml = '<svg class="pinmk" viewBox="0 0 34 42"><path d="M17 41S3 27.5 3 16a14 14 0 0 1 28 0c0 11.500-14 25-14 25z" fill="#22b14c" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="5.500" fill="#fff"/></svg>';
+  const pinHtml = '<svg class="pinmk" viewBox="0 0 34 42"><path d="M17 41S3 27.5 3 16a14 14 0 0 1 28 0c0 11.5-14 25-14 25z" fill="#22b14c" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="5.5" fill="#fff"/></svg>';
   if (destMarker) destMarker.setLatLng([d.lat, d.lon]);
   else destMarker = L.marker([d.lat, d.lon], { icon: L.divIcon({ className: "me", html: pinHtml, iconSize: [0, 0] }), interactive: false }).addTo(map);
-  map.panTo([d.lat, d.lon]);
   renderDest();
+  setCompact(true);
+  setTimeout(() => map.panTo([d.lat, d.lon]), 120);
+}
+function renderDestInfo() {
+  const d = S.dest; if (!d) return;
+  const c = S.pos || (map && { lat: map.getCenter().lat, lon: map.getCenter().lng });
+  let t = String(d.text).split(",")[0];
+  if (c) { const km = distKm(c, d); t += ` · ~${km.toFixed(1)} km · ~${money(priceFor(km, S.cls))}`; }
+  $("#destTxt").textContent = t;
 }
 function renderDest() {
   const d = S.dest;
   $("#destRow").classList.toggle("hide", !d); $("#qx").classList.toggle("hide", !d);
-  if (d) { $("#destTxt").textContent = d.text; $("#q").value = d.text; }
+  if (d) { renderDestInfo(); $("#q").value = d.text; }
   $("#qr").classList.add("hide"); $("#qr").innerHTML = ""; $("#sheet").classList.remove("searching");
 }
 function clearDest() {
   S.dest = null; if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
-  $("#q").value = ""; renderDest();
+  $("#q").value = ""; renderDest(); setCompact(false);
 }
 async function setDestFromMap(ll) {
   setDest({ lat: ll.lat, lon: ll.lng, text: "Xəritədən seçilmiş nöqtə" });
   const t = await revGeo(ll.lat, ll.lng);
   if (t && S.dest && S.dest.lat === ll.lat) { S.dest.text = t; renderDest(); }
 }
-$("#q").addEventListener("focus", () => { /* axtarış sahəsi */ });
 bindSearch($("#q"), $("#qr"), d => setDest(d), on => $("#sheet").classList.toggle("searching", on));
 $("#q").addEventListener("input", () => { if (!$("#q").value.trim()) $("#sheet").classList.remove("searching"); });
+$("#q").addEventListener("focus", () => { if ($("#sheet").classList.contains("compact") && !S.dest) setCompact(false); });
 
 /* ---------- Sifariş ---------- */
 const rad = x => x * Math.PI / 180;
@@ -329,15 +403,15 @@ const priceFor = (km, cls) => Math.max(2.5, (1.2 + 0.55 * km) * CLASSES[cls].m);
 
 function openClassSheet() {
   const m = modal(`<h3>Taksi növü</h3>${Object.entries(CLASSES).map(([k, v]) => `<button class="opt ${S.cls === k ? "on" : ""}" data-k="${k}">${ic("car")}<div><b>${v.n}</b><small>${v.d}</small></div>${S.cls === k ? ic("check") : ""}</button>`).join("")}<button class="btn ghost" data-act="mclose">Bağla</button>`);
-  $$(".opt", m).forEach(b => b.onclick = () => { S.cls = b.dataset.k; closeModal(); toast("Seçildi: " + CLASSES[S.cls].n); });
+  $$(".opt", m).forEach(b => b.onclick = () => { S.cls = b.dataset.k; closeModal(); renderDestInfo(); toast("Seçildi: " + CLASSES[S.cls].n); });
 }
 function openPaySheet() {
   const m = modal(`<h3>Ödəniş üsulu</h3>${Object.entries(PAYS).map(([k, v]) => `<button class="opt ${S.pay === k ? "on" : ""}" data-k="${k}">${ic(k === "cash" ? "card" : "wallet")}<div><b>${v}</b><small>${k === "bal" ? "Balans: " + money(S.profile.balance) : "Səfərin sonunda sürücüyə"}</small></div>${S.pay === k ? ic("check") : ""}</button>`).join("")}<button class="btn ghost" data-act="mclose">Bağla</button>`);
   $$(".opt", m).forEach(b => b.onclick = () => { S.pay = b.dataset.k; closeModal(); toast("Ödəniş: " + PAYS[S.pay]); });
 }
 function openConfirm() {
-  if (!S.dest) { toast("Əvvəlcə gedəcəyiniz ünvanı seçin."); $("#q").focus(); return; }
-  if (Object.values(S.orders).some(o => o.status === "active")) { toast("Artıq aktiv sifarişiniz var."); S.otab = "active"; renderOrders(); showTab("orders"); return; }
+  if (!S.dest) { toast("Əvvəlcə gedəcəyiniz ünvanı seçin."); setCompact(false); $("#q").focus(); return; }
+  if (Object.values(S.orders).some(o => ["active", "accepted"].includes(o.status))) { toast("Artıq aktiv sifarişiniz var."); S.otab = "active"; renderOrders(); showTab("orders"); return; }
   const c = S.pos || { lat: map.getCenter().lat, lon: map.getCenter().lng };
   const km = distKm(c, S.dest), price = priceFor(km, S.cls);
   const m = modal(`<h3>Sifarişi təsdiqlə</h3>
@@ -348,40 +422,87 @@ function openConfirm() {
     <div class="kv"><span>Ödəniş</span><b>${PAYS[S.pay]}</b></div>
     <div class="kv"><span>Təxmini qiymət</span><b>${money(price)}</b></div>
     <button class="btn" id="cok">Sifarişi təsdiqlə</button><button class="btn ghost" data-act="mclose">Ləğv et</button>`);
-  $("#cok", m).onclick = async () => {
-    const btn = $("#cok", m); btn.disabled = true;
-    try {
-      await push(ref(db, `orders/${S.user.uid}`), {
-        status: "active", uid: S.user.uid, name: S.profile.name || "", phone: S.profile.phone || "",
-        from: { lat: c.lat, lon: c.lon, text: S.pos ? "Cari konumum" : "Xəritədə seçilmiş nöqtə" },
-        to: { lat: S.dest.lat, lon: S.dest.lon, text: S.dest.text },
-        cls: S.cls, pay: S.pay, km: +km.toFixed(2), price: +price.toFixed(2), createdAt: serverTimestamp()
-      });
-      closeModal(); toast("Sifarişiniz qəbul edildi."); S.otab = "active"; renderOrders(); showTab("orders");
-    } catch (e) { btn.disabled = false; toast(dbMsg(e)); }
-  };
+  $("#cok", m).onclick = () => placeOrder(c, km, price, $("#cok", m));
+}
+async function placeOrder(c, km, price, btn) {
+  btn.disabled = true;
+  const uid = S.user.uid, id = push(ref(db, `orders/${uid}`)).key;
+  const from = { lat: c.lat, lon: c.lon, text: S.pos ? "Cari konumum" : "Xəritədə seçilmiş nöqtə" };
+  const to = { lat: S.dest.lat, lon: S.dest.lon, text: S.dest.text };
+  const base = { cls: S.cls, pay: S.pay, km: +km.toFixed(2), price: +price.toFixed(2) };
+  const name = S.profile.name || S.user.displayName || "", phone = S.profile.phone || "";
+  let shared = true;
+  try {
+    await set(ref(db, `live_orders/${id}`), { uid, name: name.split(" ")[0] || "Müştəri", status: "open", from, to, ...base, createdAt: serverTimestamp() });
+    await set(ref(db, `order_private/${id}`), { uid, customerName: name, customerPhone: phone, createdAt: serverTimestamp() });
+  } catch (e) {
+    shared = false; console.warn("live order yazılmadı:", e);
+    try { await remove(ref(db, `live_orders/${id}`)); } catch (x) { }
+  }
+  try {
+    await set(ref(db, `orders/${uid}/${id}`), { status: "active", uid, name, phone, from, to, ...base, createdAt: serverTimestamp() });
+  } catch (e) { btn.disabled = false; toast(dbMsg(e)); return; }
+  closeModal();
+  toast(shared ? "Sifarişiniz sürücülərə göndərildi." : "Sifariş yadda saxlanıldı, amma sürücülərə göndərilə bilmədi.");
+  S.otab = "active"; renderOrders(); showTab("orders");
+}
+
+/* Sifarişi izləmə (müştəri tərəfi) */
+function effStatus(o) { const l = S.live[o.id]; if (l) return l.status === "open" ? "active" : l.status; return o.status; }
+function notifyChat(oid, chat, role) {
+  const n = chat.length, prev = S.seen[oid]; S.seen[oid] = n;
+  if (prev === undefined || n <= prev) return;
+  const last = chat[n - 1];
+  if (last && last.from !== role && !(S.sub === "ochat" && S.chatCtx && S.chatCtx.oid === oid)) {
+    S.unread[oid] = true; toast("Yeni mesaj: " + String(last.text).slice(0, 60));
+    try { navigator.vibrate && navigator.vibrate(150); } catch (e) { }
+  }
+}
+const chatArr = v => v && v.chat ? Object.values(v.chat).sort((a, b) => (a.ts || 0) - (b.ts || 0)) : [];
+function watchOrder(oid) {
+  if (S.watched.has(oid)) return; S.watched.add(oid);
+  S.unsubs.push(onValue(ref(db, `live_orders/${oid}`), s => {
+    const prev = S.live[oid] && S.live[oid].status;
+    const l = s.exists() ? s.val() : null; S.live[oid] = l;
+    if (l && prev === "open" && l.status === "accepted") toast("Sürücü sifarişinizi qəbul etdi.");
+    if (l && (l.status === "completed" || l.status === "cancelled") && S.orders[oid] && S.orders[oid].status !== l.status)
+      update(ref(db, `orders/${S.user.uid}/${oid}`), { status: l.status }).catch(() => { });
+    renderOrders();
+  }, () => { S.live[oid] = null; }));
+  S.unsubs.push(onValue(ref(db, `order_private/${oid}`), s => {
+    const v = s.exists() ? s.val() : null; S.priv[oid] = v;
+    notifyChat(oid, chatArr(v), "customer"); renderOrders();
+  }, () => { }));
 }
 
 /* ---------- Render: sifarişlər ---------- */
 const CAR_ILLU = `<svg viewBox="0 0 300 190" xmlns="http://www.w3.org/2000/svg"><g fill="#e8eefb"><rect x="30" y="100" width="46" height="70" rx="4"/><rect x="92" y="62" width="30" height="108"/><rect x="195" y="78" width="40" height="92"/><rect x="238" y="56" width="30" height="114"/><ellipse cx="60" cy="150" rx="55" ry="22"/><ellipse cx="240" cy="150" rx="55" ry="22"/></g><path d="M150 6c-14 0-24 10-24 23 0 17 24 38 24 38s24-21 24-38c0-13-10-23-24-23z" fill="#a8e0b9"/><circle cx="150" cy="29" r="8" fill="#fff"/><ellipse cx="150" cy="172" rx="100" ry="5" fill="#dde6f5"/><path d="M62 150c0-14 8-22 22-27l24-14c8-5 17-7 26-7h38c11 0 20 4 28 12l14 15c16 3 26 9 26 21v8H62z" fill="#22b14c"/><path d="M104 118l16-9c6-3 12-5 19-5h20l-4 22h-51z M165 104h12c7 0 13 3 18 8l9 10h-39z" fill="#14532d" opacity=".85"/><circle cx="104" cy="158" r="17" fill="#1f2937"/><circle cx="104" cy="158" r="8" fill="#9ca3af"/><circle cx="208" cy="158" r="17" fill="#1f2937"/><circle cx="208" cy="158" r="8" fill="#9ca3af"/></svg>`;
-function orderCard(o, active) {
-  const st = o.status === "active" ? ['<span class="st p">Sürücü axtarılır</span>'] : o.status === "cancelled" ? ['<span class="st c">Ləğv edildi</span>'] : ['<span class="st d">Tamamlandı</span>'];
-  return `<div class="card"><div class="row"><span class="meta">${fmtT(o.createdAt)}</span>${st[0]}</div>
+const ST_MAP = { active: ["p", "Sürücü axtarılır"], accepted: ["", "Sürücü yolda"], completed: ["d", "Tamamlandı"], cancelled: ["c", "Ləğv edildi"] };
+function orderCard(o) {
+  const es = effStatus(o), pv = S.priv[o.id], st = ST_MAP[es] || ["", es];
+  let drv = "";
+  if (es === "accepted") {
+    const l = S.live[o.id] || {}, nm = l.driverName || (pv && pv.driverName) || "Sürücü";
+    drv = `<div class="drv"><div><b>${esc(nm)}</b><small>${esc(l.car || "")}</small></div><div class="acts">${pv && pv.driverPhone ? callBtn(pv.driverPhone) : '<span class="meta">Nömrə yüklənir…</span>'}<button class="callbtn alt" data-act="chat" data-oid="${esc(o.id)}" data-role="customer">${ic("chat")} Mesaj${S.unread[o.id] ? '<i class="dotb"></i>' : ""}</button></div></div>`;
+  }
+  const live = es === "active" || es === "accepted";
+  return `<div class="card"><div class="row"><span class="meta">${fmtT(o.createdAt)}</span><span class="st ${st[0]}">${st[1]}</span></div>
     <div class="route"><div><i></i><span>${esc(o.from && o.from.text)}</span></div><div><i class="t"></i><span>${esc(o.to && o.to.text)}</span></div></div>
     <div class="row"><span class="meta">${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")} · ${o.km || 0} km</span><span class="price">${money(o.price)}</span></div>
-    ${active ? `<button class="btn red" style="margin-top:12px" data-act="cancelOrder" data-id="${esc(o.id)}">Sifarişi ləğv et</button>` : ""}</div>`;
+    ${drv}${live ? `<button class="btn red" style="margin-top:12px" data-act="cancelOrder" data-id="${esc(o.id)}">Sifarişi ləğv et</button>` : ""}</div>`;
 }
 function renderOrders() {
   const el = $("#ordBody"); if (!el) return;
   $$("#otabs button").forEach(b => b.classList.toggle("on", b.dataset.v === S.otab));
   const list = Object.entries(S.orders).map(([id, o]) => ({ id, ...o })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  list.forEach(o => { if (o.status === "active" && S.user) watchOrder(o.id); });
   if (S.otab === "active") {
-    const a = list.filter(o => o.status === "active");
-    el.innerHTML = a.length ? a.map(o => orderCard(o, true)).join("") :
+    const a = list.filter(o => ["active", "accepted"].includes(effStatus(o)));
+    el.innerHTML = a.length ? a.map(orderCard).join("") :
       `<div class="empty">${CAR_ILLU}<h3>Hazırda aktiv sifariş yoxdur</h3><p>Sifariş etmək üçün aşağıdakı düyməni basın</p><button class="btn" data-act="tab" data-v="home">${ic("car")} Sifariş et</button></div>`;
   } else if (S.otab === "history") {
-    const h = list.filter(o => o.status !== "active");
-    el.innerHTML = h.length ? h.map(o => orderCard(o, false)).join("") :
+    const h = list.filter(o => !["active", "accepted"].includes(effStatus(o)));
+    el.innerHTML = h.length ? h.map(orderCard).join("") :
       `<div class="empty">${CAR_ILLU}<h3>Səfər tarixçəsi boşdur</h3><p>Tamamlanmış və ləğv edilmiş səfərləriniz burada görünəcək</p></div>`;
   } else el.innerHTML = favHtml();
 }
@@ -402,12 +523,14 @@ function favHtml() {
 function renderFavs() { const el = $("#favBody"); if (el) el.innerHTML = favHtml(); if (S.otab === "favs") renderOrders(); }
 
 /* ---------- Render: profil ---------- */
+const isDriver = () => !!(S.app && S.app.status === "approved");
 function appTag() {
   const a = S.app; if (!a) return "";
-  const m = { pending: ['p', "Yoxlanılır"], approved: ["", "Qəbul edildi"], rejected: ["c", "Rədd edildi"] }[a.status];
+  if (a.status === "approved") { const n = openList().length; return `<span class="tag st">${n ? n + " yeni" : "Aktiv"}</span>`; }
+  const m = { pending: ['p', "Yoxlanılır"], rejected: ["c", "Rədd edildi"] }[a.status];
   return m ? `<span class="tag st ${m[0]}">${m[1]}</span>` : "";
 }
-function row(icon, label, act, extra = "") { return `<button class="mrow" data-act="${act[0]}" ${act[1] ? `data-n="${act[1]}"` : ""}>${ic(icon)}<span>${label}</span>${extra}${ic("chev", "sm")}</button>`; }
+function row(icon, label, act, extra = "", v = "") { return `<button class="mrow" data-act="${act[0]}" ${act[1] ? `data-n="${act[1]}"` : ""} ${v ? `data-v="${v}"` : ""}>${ic(icon)}<span>${label}</span>${extra}${ic("chev", "sm")}</button>`; }
 function renderProfile() {
   const el = $("#profBody"); if (!el) return;
   const p = S.profile, u = S.user || {};
@@ -415,8 +538,8 @@ function renderProfile() {
     <div class="pinfo"><h2>${esc(p.name || u.displayName || "İstifadəçi")}</h2><p>${esc(p.phone || u.email || "")}</p><span class="badge">${ic("shield")}Təsdiqlənmiş hesab</span></div>${ic("chev", "sm")}</button>
     <div class="bal">${ic("wallet", "w")}<div><small>Balans</small><b>${Number(p.balance || 0).toFixed(2)} ₼</b></div><button class="btn" data-act="topup">${ic("plus")} Yüklə</button></div>
     <div class="menu">
-      ${row("car", "Səfər tarixçəsi", ["trips"])}${row("star", "Sevimli ünvanlar", ["tab", ""]).replace('data-act="tab"', 'data-act="tab" data-v="favs"')}
-      ${row("tag", "Promokodlar", ["sub", "promo"])}${row("wheel", "Şoför ol", ["sub", "driver"], appTag())}
+      ${row("car", "Səfər tarixçəsi", ["trips"])}${row("star", "Sevimli ünvanlar", ["tab"], "", "favs")}
+      ${row("tag", "Promokodlar", ["sub", "promo"])}${isDriver() ? row("wheel", "Şoför paneli", ["sub", "driverpanel"], appTag()) : row("wheel", "Şoför ol", ["sub", "driver"], appTag())}
       ${row("help", "Dəstək və yardım", ["sub", "support"])}${row("info", "Tətbiq haqqında", ["sub", "about"])}
       ${row("shield", "Təhlükəsizlik", ["sub", "security"])}${row("logout", "Hesabdan çıxış", ["logout"])}
     </div>
@@ -455,8 +578,8 @@ const SUB = {
   },
   about: {
     title: "Tətbiq haqqında",
-    render: () => `<div style="text-align:center;padding:10px"><svg class="lg" style="width:80px;height:70px"><use href="#i-logo"/></svg><h2 style="margin:8px 0 2px">Xocavar İçi</h2><p class="meta">Versiya 1.0.0</p></div>
-      <div class="info">Xocavar İçi — şəhər daxilində rahat və təhlükəsiz taksi sifarişi tətbiqidir. Sifariş verin, ünvanlarınızı yadda saxlayın, dəstək komandası ilə 24/7 əlaqə saxlayın.</div>
+    render: () => `<div style="text-align:center;padding:10px"><svg class="lg" style="width:80px;height:70px"><use href="#i-logo"/></svg><h2 style="margin:8px 0 2px">Xocavar İçi</h2><p class="meta">Versiya 2.0.0</p></div>
+      <div class="info">Xocavar İçi — şəhər daxilində rahat və təhlükəsiz taksi sifarişi tətbiqidir. Sifariş verin, ünvanlarınızı yadda saxlayın, sürücü ilə əlaqə saxlayın və dəstək komandası ilə 24/7 yazışın.</div>
       ${installEv ? `<button class="btn" style="font-size:18px" data-act="install">Ana ekrana əlavə et</button>` : '<div class="info">Brauzer menyusundan «Ana ekrana əlavə et» seçərək tətbiqi quraşdıra bilərsiniz.</div>'}
       <button class="btn ghost" data-act="sub" data-n="support">${ic("headset")} Dəstəyə yaz</button>`
   },
@@ -475,29 +598,36 @@ const SUB = {
     })
   },
   driver: { title: "Şoför ol", render: driverHtml, mount: driverMount },
-  support: { title: "24/7 Dəstək", chat: true, render: () => `<div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="1000" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`, mount: supportMount }
+  driverpanel: { title: "Şoför paneli", render: () => '<div id="dpBody"></div>', mount: driverPanelMount },
+  support: { title: "24/7 Dəstək", chat: true, render: () => `<div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="1000" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`, mount: supportMount },
+  ochat: {
+    title: "Mesajlar", chat: true,
+    render: c => `<div class="callbar"><div><b>${esc(c.name)}</b><small>${esc(c.phone || "")}</small></div>${callBtn(c.phone)}</div><div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="500" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`,
+    mount: ochatMount
+  }
 };
 function openSub(name, arg) {
   closeSubCleanup();
   const s = SUB[name]; if (!s) return;
+  if (name !== "ochat") S.back = null;
   S.sub = name;
   $("#subTitle").textContent = s.title;
-  const b = $("#subBody"); b.className = "subbody" + (s.chat ? " chatpage" : ""); b.innerHTML = s.render();
+  const b = $("#subBody"); b.className = "subbody" + (s.chat ? " chatpage" : ""); b.innerHTML = s.render(arg);
   $("#sub").classList.add("on");
   if (s.mount) s.mount(arg);
 }
 function refreshSub(name) {
-  if (S.sub !== name || name === "support") return;
+  if (S.sub !== name || ["support", "ochat", "driverpanel"].includes(name)) return;
   const s = SUB[name]; $("#subBody").innerHTML = s.render(); if (s.mount) s.mount();
 }
-function closeSubCleanup() { if (S.subUn) { try { S.subUn(); } catch (e) { } S.subUn = null; } }
+function closeSubCleanup() { if (S.subUn) { try { S.subUn(); } catch (e) { } S.subUn = null; } S.chatCtx = null; }
 function closeSub() { closeSubCleanup(); S.sub = null; $("#sub").classList.remove("on"); }
 
 /* ---------- Şoför ol ---------- */
 function driverHtml() {
   const a = S.app;
   if (a && a.status === "pending") return `<div class="info wait"><b>Ərizəniz yoxlanılır</b><br>Ərizəniz qəbul edildi və yoxlanılır. Nəticə burada göstəriləcək.</div>${summary(a)}`;
-  if (a && a.status === "approved") return `<div class="info ok"><b>Qəbul edildi 🎉</b><br>Ərizəniz təsdiqləndi. Tezliklə sizinlə əlaqə saxlanılacaq.</div>${summary(a)}`;
+  if (a && a.status === "approved") return `<div class="info ok"><b>Qəbul edildi 🎉</b><br>Ərizəniz təsdiqləndi. İndi aktiv sifarişləri görə bilərsiniz.</div><button class="btn" style="font-size:18px" data-act="sub" data-n="driverpanel">${ic("wheel")} Şoför panelinə keç</button>${summary(a)}`;
   if (a && a.status === "rejected") return `<div class="info bad"><b>Rədd edildi</b><br>${a.reason ? "Səbəb: " + esc(a.reason) : "Səbəb göstərilməyib."}</div>
     <div class="info">Dəstək ilə əlaqə saxlayın. Rədd edilmiş ərizə ilə yenidən müraciət etmək üçün dəstək komandası sizə kömək edəcək.</div>
     <button class="btn" style="font-size:18px" data-act="supportRejected">${ic("headset")} Dəstək ilə əlaqə saxlayın</button>${summary(a)}`;
@@ -539,23 +669,135 @@ function driverMount() {
   });
 }
 
-/* ---------- Dəstək söhbəti ---------- */
+/* ---------- Şoför paneli (canlı sifarişlər) ---------- */
+const openList = () => Object.entries(S.dOpen)
+  .filter(([, o]) => !o.createdAt || now() - o.createdAt < FRESH_MS)
+  .sort((a, b) => (b[1].createdAt || now()) - (a[1].createdAt || now()));
+function updatePill() {
+  const p = $("#drvPill"); if (!p) return;
+  const ok = !!S.user && isDriver(); p.classList.toggle("hide", !ok);
+  if (ok) { const n = openList().length; $("#drvCnt").textContent = n; $("#drvCnt").classList.toggle("hide", !n); }
+}
+function syncDriverFeed() { if (S.user && isDriver()) startDriverFeed(); else stopDriverFeed(); }
+function stopDriverFeed() {
+  drvUns.forEach(u => { try { u(); } catch (e) { } }); drvUns = [];
+  Object.values(drvPriv).forEach(u => { try { u(); } catch (e) { } }); drvPriv = {};
+  S.dOpen = {}; S.dMine = {}; S.dPriv = {}; S.drvOn = false; S.dErr = false;
+}
+function watchPrivDriver(id, tries = 0) {
+  return onValue(ref(db, `order_private/${id}`), ps => {
+    const v = ps.val(); S.dPriv[id] = v;
+    notifyChat(id, chatArr(v), "driver"); renderDriverPanel();
+  }, () => {
+    delete drvPriv[id];
+    if (tries < 6) setTimeout(() => { if (S.dMine[id] && !drvPriv[id]) drvPriv[id] = watchPrivDriver(id, tries + 1); }, 1500);
+  });
+}
+function startDriverFeed() {
+  if (S.drvOn) return; S.drvOn = true; S.dErr = false;
+  const uid = S.user.uid; let first = true;
+  drvUns.push(onValue(query(ref(db, "live_orders"), orderByChild("status"), equalTo("open")), s => {
+    const v = s.val() || {}, next = {};
+    Object.entries(v).forEach(([id, o]) => { if (o.uid !== uid) next[id] = o; });
+    if (!first) Object.keys(next).forEach(id => {
+      if (!S.dOpen[id]) { toast("Yeni sifariş: " + ((next[id].from && next[id].from.text) || "")); try { navigator.vibrate && navigator.vibrate(200); } catch (e) { } }
+    });
+    first = false; S.dErr = false; S.dOpen = next; updatePill(); renderDriverPanel(); renderProfile();
+  }, e => { console.warn(e); S.dErr = true; renderDriverPanel(); }));
+  drvUns.push(onValue(query(ref(db, "live_orders"), orderByChild("driverId"), equalTo(uid)), s => {
+    const v = s.val() || {}; S.dMine = {};
+    Object.entries(v).forEach(([id, o]) => { if (o.status === "accepted") S.dMine[id] = o; });
+    Object.keys(S.dMine).forEach(id => { if (!drvPriv[id]) drvPriv[id] = watchPrivDriver(id); });
+    Object.keys(drvPriv).forEach(id => { if (!S.dMine[id]) { try { drvPriv[id](); } catch (e) { } delete drvPriv[id]; delete S.dPriv[id]; } });
+    renderDriverPanel();
+  }, e => console.warn(e)));
+}
+async function acceptOrder(oid) {
+  if (!isDriver()) return;
+  if (Object.keys(S.dMine).length) { toast("Əvvəlcə cari sifarişi tamamlayın."); return; }
+  const a = S.app, uid = S.user.uid, nm = a.fullName || S.profile.name || "Sürücü", ph = a.phone || S.profile.phone || "";
+  try {
+    const res = await runTransaction(ref(db, `live_orders/${oid}`), cur => {
+      if (!cur) return cur;
+      if (cur.status !== "open") return;
+      cur.status = "accepted"; cur.driverId = uid; cur.driverName = nm;
+      cur.car = `${a.make} ${a.model}, ${a.color}, ${a.plate}`; cur.acceptedAt = Date.now();
+      return cur;
+    });
+    if (!res.committed) { toast("Bu sifariş artıq götürülüb və ya ləğv edilib."); return; }
+    await update(ref(db, `order_private/${oid}`), { driverId: uid, driverName: nm, driverPhone: ph });
+    toast("Sifarişi qəbul etdiniz.");
+  } catch (e) { toast(dbMsg(e)); }
+}
+function routeHtml(o) {
+  return `<div class="route"><div><i></i><span>${esc(o.from && o.from.text)}</span></div><div><i class="t"></i><span>${esc(o.to && o.to.text)}</span></div></div>`;
+}
+function jobCard(id, o) {
+  const pv = S.dPriv[id] || {}, nm = pv.customerName || o.name || "Müştəri";
+  return `<div class="card"><div class="row"><b>${esc(nm)}</b><span class="st">Qəbul edilib</span></div>${routeHtml(o)}
+  <div class="row"><span class="meta">${o.km || 0} km · ${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")}</span><span class="price">${money(o.price)}</span></div>
+  <div class="acts" style="margin-top:12px">${pv.customerPhone ? callBtn(pv.customerPhone, "Müştərini ara") : '<span class="meta">Nömrə yüklənir…</span>'}<button class="callbtn alt" data-act="chat" data-oid="${esc(id)}" data-role="driver">${ic("chat")} Mesaj${S.unread[id] ? '<i class="dotb"></i>' : ""}</button></div>
+  <div class="acts" style="margin-top:8px"><a class="callbtn alt" target="_blank" rel="noopener" href="${esc(navUrl(o.from))}">${ic("nav")} Götürmə yeri</a><a class="callbtn alt" target="_blank" rel="noopener" href="${esc(navUrl(o.to))}">${ic("nav")} Təyinat</a></div>
+  <div class="acts" style="margin-top:10px"><button class="btn sm" data-act="finish" data-oid="${esc(id)}">Tamamla</button><button class="btn sm red" data-act="release" data-oid="${esc(id)}">İmtina et</button></div></div>`;
+}
+function openCard(id, o) {
+  const near = S.pos && S.pos.src === "gps" && o.from ? ` · sizdən ${distKm(S.pos, o.from).toFixed(1)} km` : "";
+  return `<div class="card"><div class="row"><b>${esc(o.name || "Müştəri")}</b><span class="meta">${ago(o.createdAt)}</span></div>${routeHtml(o)}
+  <div class="row"><span class="meta">${o.km || 0} km · ${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")}${near}</span><span class="price">${money(o.price)}</span></div>
+  <button class="btn" style="font-size:17px;padding:12px;margin-top:12px" data-act="accept" data-oid="${esc(id)}">Qəbul et</button></div>`;
+}
+function renderDriverPanel() {
+  const el = $("#dpBody"); if (!el) return;
+  if (!isDriver()) { el.innerHTML = '<div class="info wait">Şoför paneli yalnız təsdiqlənmiş sürücülər üçündür.</div>'; return; }
+  const mine = Object.entries(S.dMine), open = openList();
+  el.innerHTML = (S.dErr ? '<div class="info bad">Sifarişlər yüklənmədi. İnterneti yoxlayın və ya bir az sonra yenidən cəhd edin.</div>' : "") +
+    (mine.length ? `<div class="sec">Qəbul etdiyim sifariş</div>${mine.map(([id, o]) => jobCard(id, o)).join("")}` : "") +
+    `<div class="sec">Aktiv sifarişlər${open.length ? " (" + open.length + ")" : ""}</div>` +
+    (open.length ? open.map(([id, o]) => openCard(id, o)).join("") : '<div class="empty" style="padding:24px 6px"><p style="font-size:16px;margin:0 auto">Hazırda aktiv sifariş yoxdur. Yeni sifariş gələndə burada görünəcək.</p></div>') +
+    `<button class="btn ghost" style="margin-top:6px" data-act="sub" data-n="driver">Ərizə məlumatlarım</button>`;
+}
+function driverPanelMount() {
+  renderDriverPanel();
+  const t = setInterval(() => { renderDriverPanel(); updatePill(); }, 30000);
+  S.subUn = () => clearInterval(t);
+}
+
+/* ---------- Dəstək və sifariş söhbəti ---------- */
+function msgHtml(arr, mine) {
+  return arr.map(m => `<div class="msg ${m.from === mine ? "u" : "a"}">${esc(m.text)}<small>${fmtT(m.ts)}</small></div>`).join("");
+}
 function supportMount(prefill) {
   const uid = S.user.uid, chat = $("#chat"), form = $("#cf"), input = $("#ci");
   if (typeof prefill === "string") input.value = prefill;
-  chat.innerHTML = '<div class="msg a">Salam! Sualınızı yazın, dəstək komandamız tezliklə cavab verəcək.</div>';
+  const hello = '<div class="msg a">Salam! Sualınızı yazın, dəstək komandamız tezliklə cavab verəcək.</div>';
+  chat.innerHTML = hello;
   S.subUn = onValue(query(ref(db, `support/${uid}/messages`), limitToLast(200)), snap => {
     const arr = []; snap.forEach(c => { arr.push(c.val()); });
-    chat.innerHTML = '<div class="msg a">Salam! Sualınızı yazın, dəstək komandamız tezliklə cavab verəcək.</div>' +
-      arr.map(m => `<div class="msg ${m.from === "admin" ? "a" : "u"}">${esc(m.text)}<small>${fmtT(m.ts)}</small></div>`).join("");
+    chat.innerHTML = hello + msgHtml(arr, "user");
     chat.scrollTop = chat.scrollHeight;
   }, () => toast("Söhbət yüklənmədi."));
   form.addEventListener("submit", async e => {
     e.preventDefault(); const text = input.value.trim(); if (!text) return; input.value = "";
     try {
       await push(ref(db, `support/${uid}/messages`), { from: "user", text, ts: serverTimestamp() });
-      await update(ref(db, `support/${uid}/meta`), { name: S.profile.name || S.user.displayName || "", email: S.user.email, last: text.slice(0, 120), ts: serverTimestamp(), unreadAdmin: true });
+      await update(ref(db, `support/${uid}/meta`), { name: S.profile.name || S.user.displayName || "", email: S.user.email, phone: S.profile.phone || "", last: text.slice(0, 120), ts: serverTimestamp(), unreadAdmin: true });
     } catch (er) { toast(dbMsg(er)); input.value = text; }
+  });
+}
+function ochatMount(c) {
+  S.chatCtx = c;
+  const chat = $("#chat"), form = $("#cf"), input = $("#ci");
+  chat.innerHTML = '<div class="msg a">Burada sürücü / müştəri ilə yazışa bilərsiniz.</div>';
+  S.subUn = onValue(query(ref(db, `order_private/${c.oid}/chat`), limitToLast(200)), snap => {
+    const arr = []; snap.forEach(x => { arr.push(x.val()); });
+    S.seen[c.oid] = arr.length;
+    chat.innerHTML = '<div class="msg a">Burada sürücü / müştəri ilə yazışa bilərsiniz.</div>' + msgHtml(arr, c.role);
+    chat.scrollTop = chat.scrollHeight;
+  }, () => toast("Söhbət yüklənmədi."));
+  form.addEventListener("submit", async e => {
+    e.preventDefault(); const text = input.value.trim(); if (!text) return; input.value = "";
+    try { await push(ref(db, `order_private/${c.oid}/chat`), { from: c.role, uid: S.user.uid, text, ts: serverTimestamp() }); }
+    catch (er) { toast(dbMsg(er)); input.value = text; }
   });
 }
 

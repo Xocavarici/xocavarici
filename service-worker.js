@@ -1,4 +1,4 @@
-const CACHE = "xocavar-ici-v1";
+const CACHE = "xocavar-ici-v2";
 const SHELL = ["./", "./index.html", "./app.css", "./app.js", "./firebase.js", "./manifest.json", "./icon.svg", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
