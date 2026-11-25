@@ -32,7 +32,7 @@ Yeni versiya köhnə görünsə, səhifəni bağlayıb yenidən açın.
 
 ## 3) Tətbiqdə nələr var
 - **Ana səhifə:** axtarış, filtr, kateqoriyalar, şəhər seçimi, yeni elanlar, VIP elanlar öndə.
-- **Elan:** 4 şəkilə qədər (telefonda avtomatik sıxılır), başlıq, qiymət, vəziyyət, şəhər, təsvir, telefonu göstər/gizlət. Elanlarım: redaktə, «Satıldı», gizlət/aktiv et, sil.
+- **Elan:** 4 şəkilə qədər (telefonda avtomatik sıxılır), başlıq, qiymət növü (Qiymət / Razılaşma yolu ilə / Sifarişlə), vəziyyət, şəhər, təsvir, telefonu göstər/gizlət. Elanlarım: redaktə, «Satıldı», gizlət/aktiv et, sil.
 - **Söhbət:** alıcı elanda «Mesaj yaz» basır, satıcı ilə canlı yazışır. Yeni mesajda ekranın üstündə bildiriş, titrəmə, başlıqda sayğac. Brauzer bildirişi icazə verilibsə və səhifə arxa planda açıqdırsa sistem bildirişi də çıxır.
 - **Dəstək/yardım:** əvvəlki kimi 24/7 canlı söhbət (admin cavab verir).
 - **AV pulu:** ayrıca balans. Promokodla yüklənir, elanı önə çıxarmaq üçün xərclənir (qiymət/müddət admin tərəfindən dəyişilir). Profil → AV kartı → «Yüklə» (pul ödənişi yoxdur, yalnız promokod).
@@ -40,6 +40,8 @@ Yeni versiya köhnə görünsə, səhifəni bağlayıb yenidən açın.
 - **Bildirişlər (zəng):** admin elanlarının siyahısı.
 
 ## 4) Admin paneli
+Admin hesabı (`admins/<uid>: true`) ilə girəndə **Profil → Ayarlar**-ın ən üstündə «Admin paneli» düyməsi görünür; digər istifadəçilərə görünmür.
+
 `/admin.html` — Ümumi statistika, Elanlar (blokla/VIP ver/sil), İstifadəçilər (AV əlavə et/çıxart), Promokodlar (yarat, limit, bitmə tarixi, aktiv/passiv), Bildiriş (pop-up mətn, növ, önizləmə, hər dəfə/bir dəfə), Dəstək, Ayarlar (önə çıxarma qiyməti və gün).
 **Ayarlar** bölməsində bir dəfə «Yadda saxla» basın (standart: 3 AV, 3 gün).
 

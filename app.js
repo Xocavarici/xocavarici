@@ -10,6 +10,8 @@ const ic = (n, c = "") => `<svg class="ic ${c}"><use href="#i-${n}"/></svg>`;
 const pad = n => String(n).padStart(2, "0");
 const fmtT = t => { if (!t) return ""; const d = new Date(t); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtP = n => { n = Number(n || 0); return (n % 1 ? n.toFixed(2) : String(n)) + " ₼"; };
+const priceTxt = l => l.priceType === "nego" ? "Razılaşma yolu ilə" : l.priceType === "order" ? "Sifarişlə" : fmtP(l.price);
+const ptCls = l => (l.priceType && l.priceType !== "fixed") ? " t" : "";
 const fmtAV = n => Number(n || 0).toFixed(2) + " AV";
 const initials = n => String(n || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase() || "?";
 const now = () => Date.now() + (S.off || 0);
@@ -83,7 +85,8 @@ onAuthStateChanged(auth, u => {
     $("#auth").classList.remove("hide"); $("#app").classList.add("hide"); updateBadges();
     return;
   }
-  S.user = u;
+  S.user = u; S.isAdmin = false;
+  get(ref(db, `admins/${u.uid}`)).then(x => { S.isAdmin = x.val() === true; refreshSub("settings"); }).catch(() => { });
   $("#auth").classList.add("hide"); $("#app").classList.remove("hide");
   buildHome();
   const uid = u.uid;
@@ -193,7 +196,7 @@ const favSet = () => S.profile.favs || {};
 function card(id, l) {
   const fav = !!favSet()[id];
   return `<article class="lc" data-act="open" data-id="${esc(id)}"><div class="lc-img">${l.thumb ? `<img src="${l.thumb}" alt="" loading="lazy">` : `<span class="noimg">${ic("bike", "xl")}</span>`}${isBoosted(l) ? `<span class="vip">${ic("bolt")} VIP</span>` : ""}${l.status === "sold" ? '<span class="soldtag">Satılıb</span>' : ""}<button class="fav ${fav ? "on" : ""}" data-act="fav" data-id="${esc(id)}" aria-label="Sevimlilərə əlavə et">${ic("heart")}</button></div>
-  <div class="lc-b"><h4>${esc(l.title)}</h4><div class="pr">${fmtP(l.price)}</div><small>${esc(l.city || "")} · ${ago(l.createdAt)}</small></div></article>`;
+  <div class="lc-b"><h4>${esc(l.title)}</h4><div class="pr${ptCls(l)}">${priceTxt(l)}</div><small>${esc(l.city || "")} · ${ago(l.createdAt)}</small></div></article>`;
 }
 const emptyBox = (icon, h, p, btn = "") => `<div class="empty">${ic(icon)}<h3>${h}</h3><p>${p}</p>${btn}</div>`;
 
@@ -246,7 +249,7 @@ function renderMine() {
 function mineItem(id, l) {
   const b = isBoosted(l);
   return `<div class="mi"><div class="mi-top" data-act="open" data-id="${esc(id)}"><div class="mi-img">${l.thumb ? `<img src="${l.thumb}" alt="">` : ic("bike")}</div>
-  <div class="mi-b"><div class="row"><span class="st ${l.blocked ? "r" : l.status === "sold" ? "d" : l.status === "hidden" ? "p" : ""}">${l.blocked ? "Bloklanıb" : l.status === "sold" ? "Satılıb" : l.status === "hidden" ? "Gizli" : "Aktiv"}</span>${b ? `<span class="st p">${ic("bolt", "sm")} VIP</span>` : ""}</div><h4>${esc(l.title)}</h4><div class="pr">${fmtP(l.price)}</div><small>${ago(l.createdAt)}</small></div></div>
+  <div class="mi-b"><div class="row"><span class="st ${l.blocked ? "r" : l.status === "sold" ? "d" : l.status === "hidden" ? "p" : ""}">${l.blocked ? "Bloklanıb" : l.status === "sold" ? "Satılıb" : l.status === "hidden" ? "Gizli" : "Aktiv"}</span>${b ? `<span class="st p">${ic("bolt", "sm")} VIP</span>` : ""}</div><h4>${esc(l.title)}</h4><div class="pr${ptCls(l)}">${priceTxt(l)}</div><small>${ago(l.createdAt)}</small></div></div>
   <div class="mi-acts"><button class="chipb" data-act="edit" data-id="${esc(id)}">${ic("edit")} Redaktə</button>${l.status === "active" && !l.blocked ? `<button class="chipb a" data-act="boost" data-id="${esc(id)}">${ic("bolt")} ${b ? "VIP aktivdir" : "Önə çıxar"}</button>` : ""}
   ${l.status === "active" ? `<button class="chipb g" data-act="setst" data-id="${esc(id)}" data-v="sold">${ic("check")} Satıldı</button>` : `<button class="chipb g" data-act="setst" data-id="${esc(id)}" data-v="active">${ic("check")} Aktiv et</button>`}
   <button class="chipb r" data-act="del" data-id="${esc(id)}">${ic("trash")}</button></div></div>`;
@@ -537,7 +540,7 @@ SUB.listing = {
     else if (l.status === "sold") bar = `<div class="abar"><div class="info" style="flex:1;text-align:center">Bu elan satılıb.</div></div>`;
     else bar = `<div class="abar"><button class="btn" data-act="msg" data-id="${esc(a.id)}">${ic("chat")} Mesaj yaz</button>${l.phone ? `<a class="btn ghost" style="text-decoration:none" href="${esc(telHref(l.phone))}">${ic("phone")} Zəng et</a>` : ""}</div>`;
     return `<div class="dscroll"><div class="gal" id="gal">${gal}</div>
-    <div class="row"><div class="dprice">${fmtP(l.price)}</div><button class="circ sm" data-act="fav" data-id="${esc(a.id)}" style="color:${fav ? "var(--red)" : "inherit"}">${ic("heart", fav ? "fill" : "")}</button></div>
+    <div class="row"><div class="dprice${ptCls(l)}">${priceTxt(l)}</div><button class="circ sm" data-act="fav" data-id="${esc(a.id)}" style="color:${fav ? "var(--red)" : "inherit"}">${ic("heart", fav ? "fill" : "")}</button></div>
     <div class="dtitle">${esc(l.title)}</div>${tags}
     ${l.blocked ? '<div class="info bad">Bu elan inzibatçı tərəfindən bloklanıb.</div>' : ""}${isBoosted(l) ? `<div class="info ok">${ic("bolt", "sm")} VIP elan · ${fmtT(l.boostedUntil).slice(0, 10)} tarixinədək önə çıxarılıb</div>` : ""}
     <div class="card"><div class="sec" style="margin:0 0 8px">Təsvir</div><div class="desc">${esc(l.desc || "Təsvir əlavə edilməyib.")}</div></div>
@@ -582,10 +585,12 @@ function drawBrowse() {
   if (f.cat) arr = arr.filter(([, l]) => l.category === f.cat);
   if (f.city) arr = arr.filter(([, l]) => l.city === f.city);
   if (f.cond) arr = arr.filter(([, l]) => l.cond === f.cond);
-  if (f.min !== "") arr = arr.filter(([, l]) => l.price >= Number(f.min));
-  if (f.max !== "") arr = arr.filter(([, l]) => l.price <= Number(f.max));
+  const fx = l => (l.priceType || "fixed") === "fixed";
+  if (f.min !== "") arr = arr.filter(([, l]) => fx(l) && l.price >= Number(f.min));
+  if (f.max !== "") arr = arr.filter(([, l]) => fx(l) && l.price <= Number(f.max));
   if (q) arr = arr.filter(([, l]) => (l.title + " " + (l.desc || "")).toLowerCase().includes(q));
-  if (f.sort === "cheap") arr.sort((a, b) => a[1].price - b[1].price); else if (f.sort === "exp") arr.sort((a, b) => b[1].price - a[1].price); else sortL(arr);
+  const pv = (l, d) => fx(l) ? l.price : d;
+  if (f.sort === "cheap") arr.sort((a, b) => pv(a[1], 1e12) - pv(b[1], 1e12)); else if (f.sort === "exp") arr.sort((a, b) => pv(b[1], -1) - pv(a[1], -1)); else sortL(arr);
   $("#bn").textContent = arr.length + " elan tapıldı";
   el.innerHTML = arr.length ? arr.map(([id, l]) => card(id, l)).join("") : `<div style="grid-column:1/-1">${emptyBox("search", "Elan tapılmadı", "Axtarış və ya filtri dəyişib yenidən yoxlayın.")}</div>`;
 }
@@ -594,11 +599,12 @@ function drawBrowse() {
 SUB.add = {
   title: a => a && a.id ? "Elanı redaktə et" : "Yeni elan",
   render: a => {
-    const l = a.id ? getL(a.id) : null, p = S.profile;
+    const l = a.id ? getL(a.id) : null, p = S.profile, pt = l ? (l.priceType || "fixed") : "fixed";
     return `<form id="af" class="form"><div><div class="sec" style="margin:0 0 8px">Şəkillər (ən çox 4)</div><div class="photos" id="ph"></div><input id="pf" type="file" accept="image/*" multiple hidden></div>
     <div><div class="sec" style="margin:0 0 8px">Kateqoriya</div><div class="chips" id="ac">${CATS.map(c => `<button type="button" data-k="${c.k}" class="${l && l.category === c.k ? "on" : ""}">${esc(c.n)}</button>`).join("")}</div></div>
     <label>Başlıq<input id="at" maxlength="80" required placeholder="Məs: Dağ velosipedi 26&quot;" value="${esc(l ? l.title : "")}"></label>
-    <label>Qiymət (₼)<input id="ap" type="number" inputmode="decimal" min="0" step="0.01" required value="${l ? l.price : ""}"></label>
+    <div><div class="sec" style="margin:0 0 8px">Qiymət növü</div><div class="chips" id="apt"><button type="button" data-k="fixed" class="${pt === "fixed" ? "on" : ""}">Qiymət</button><button type="button" data-k="nego" class="${pt === "nego" ? "on" : ""}">Razılaşma yolu ilə</button><button type="button" data-k="order" class="${pt === "order" ? "on" : ""}">Sifarişlə</button></div></div>
+    <label id="apw" class="${pt === "fixed" ? "" : "hide"}">Qiymət (₼)<input id="ap" type="number" inputmode="decimal" min="0" step="0.01" value="${l && pt === "fixed" ? l.price : ""}"></label>
     <div><div class="sec" style="margin:0 0 8px">Vəziyyət</div><div class="chips" id="ad"><button type="button" data-k="new" class="${l && l.cond === "new" ? "on" : ""}">Yeni</button><button type="button" data-k="used" class="${!l || l.cond === "used" ? "on" : ""}">İşlənmiş</button></div></div>
     <label>Şəhər<select id="aci">${CITIES.map(c => `<option ${(l ? l.city : (S.city || p.city || "Xocavar İçi")) === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
     <label>Təsvir<textarea id="ads" maxlength="2000" placeholder="Məhsul haqqında ətraflı məlumat yazın…">${esc(l ? l.desc || "" : "")}</textarea></label>
@@ -606,7 +612,7 @@ SUB.add = {
     <p class="err" id="ae"></p><button class="btn" id="ab">${a.id ? "Yadda saxla" : "Elanı yerləşdir"}</button></form>`;
   },
   mount: a => {
-    const old = a.id ? getL(a.id) : null; let P = [], changed = false, cat = old ? old.category : "", cond = old ? old.cond : "used", loading = false;
+    const old = a.id ? getL(a.id) : null; let P = [], changed = false, ptype = old ? (old.priceType || "fixed") : "fixed", cat = old ? old.category : "", cond = old ? old.cond : "used", loading = false;
     const draw = () => {
       $("#ph").innerHTML = P.map((p, i) => `<div class="slot ${i === 0 ? "first" : ""}"><img src="${p}" alt=""><button type="button" class="rm" data-i="${i}" aria-label="Sil">${ic("x")}</button></div>`).join("") + (P.length < 4 ? `<label class="slot" for="pf">${ic("camera")}<span>Əlavə et</span></label>` : "");
     };
@@ -619,20 +625,21 @@ SUB.add = {
       draw();
     });
     $("#ac").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; cat = b.dataset.k; $$("#ac button").forEach(x => x.classList.toggle("on", x === b)); });
+    $("#apt").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; ptype = b.dataset.k; $$("#apt button").forEach(x => x.classList.toggle("on", x === b)); $("#apw").classList.toggle("hide", ptype !== "fixed"); });
     $("#ad").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; cond = b.dataset.k; $$("#ad button").forEach(x => x.classList.toggle("on", x === b)); });
     $("#af").addEventListener("submit", async e => {
       e.preventDefault(); const err = $("#ae"), btn = $("#ab"); err.textContent = "";
-      const title = $("#at").value.trim(), price = parseFloat(String($("#ap").value).replace(",", ".")), desc = $("#ads").value.trim(), city = $("#aci").value;
+      const title = $("#at").value.trim(), price0 = parseFloat(String($("#ap").value).replace(",", ".")), desc = $("#ads").value.trim(), city = $("#aci").value, price = ptype === "fixed" ? price0 : 0;
       if (!cat) { err.textContent = "Kateqoriya seçin."; return; }
       if (title.length < 3) { err.textContent = "Başlıq ən azı 3 simvol olmalıdır."; return; }
-      if (!isFinite(price) || price < 0) { err.textContent = "Qiyməti düzgün yazın."; return; }
+      if (ptype === "fixed" && (!isFinite(price) || price < 0)) { err.textContent = "Qiyməti düzgün yazın."; return; }
       if (loading) { err.textContent = "Şəkillər yüklənir, bir az gözləyin."; return; }
       if (!P.length) { err.textContent = "Ən azı 1 şəkil əlavə edin."; return; }
       btn.disabled = true;
       try {
         const uid = S.user.uid, name = S.profile.name || S.user.displayName || "İstifadəçi", phone = $("#asp").checked ? (S.profile.phone || "") : "";
         const id = old ? a.id : push(ref(db, "listings")).key, upd = {};
-        const fields = { title, desc, price, category: cat, cond, city, phone, sellerName: name };
+        const fields = { title, desc, price, priceType: ptype, category: cat, cond, city, phone, sellerName: name };
         if (old) { Object.entries(fields).forEach(([k, v]) => { upd[`listings/${id}/${k}`] = v; }); }
         else upd[`listings/${id}`] = Object.assign({ uid, status: "active", createdAt: serverTimestamp() }, fields);
         if (!old || changed) {
@@ -729,7 +736,7 @@ SUB.settings = {
   title: "Ayarlar", live: true,
   render: () => {
     const on = !(S.profile.settings && S.profile.settings.notify === false), perm = "Notification" in window ? Notification.permission : "yoxdur";
-    return `<div class="menu" style="margin:0"><button class="setrow" data-act="sub" data-n="edit">${ic("user")}<span>Profili redaktə et</span>${ic("chev", "sm")}</button>
+    return `<div class="menu" style="margin:0">${S.isAdmin ? `<a class="setrow" href="admin.html" style="text-decoration:none;color:inherit;font-weight:700">${ic("shield")}<span>Admin paneli</span>${ic("chev", "sm")}</a>` : ""}<button class="setrow" data-act="sub" data-n="edit">${ic("user")}<span>Profili redaktə et</span>${ic("chev", "sm")}</button>
     <button class="setrow" data-act="toggleNotify">${ic("bell")}<span>Mesaj bildirişləri</span><i class="sw ${on ? "on" : ""}"></i></button>
     <button class="setrow" data-act="askPerm">${ic("phone")}<span>Brauzer bildirişləri<br><small class="meta">${perm === "granted" ? "Aktivdir" : perm === "denied" ? "Bloklanıb (brauzer ayarlarından açın)" : "Aktiv etmək üçün toxunun"}</small></span>${ic("chev", "sm")}</button>
     <button class="setrow" data-act="sub" data-n="security">${ic("shield")}<span>Təhlükəsizlik</span>${ic("chev", "sm")}</button>

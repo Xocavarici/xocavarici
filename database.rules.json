@@ -34,6 +34,7 @@
         "title": { ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 80" },
         "desc": { ".validate": "newData.isString() && newData.val().length <= 2000" },
         "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "priceType": { ".validate": "newData.val() === 'fixed' || newData.val() === 'nego' || newData.val() === 'order'" },
         "status": { ".validate": "newData.val() === 'active' || newData.val() === 'sold' || newData.val() === 'hidden'" },
         "thumb": { ".validate": "newData.isString() && newData.val().length < 120000" },
         "blocked": { ".validate": "newData.val() === data.val() || root.child('admins/'+auth.uid).val() === true" },

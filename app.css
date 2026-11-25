@@ -249,3 +249,5 @@ textarea{resize:none;min-height:110px}
 #app.insub #nav{display:none}
 
 .cityrow{padding:6px 16px 0}.cityrow .pill{max-width:none;background:#fff;border-radius:999px;padding:8px 14px;box-shadow:var(--sh)}.cityrow .pill span{max-width:60vw}
+
+.lc-b .pr.t,.mi-b .pr.t{font-size:15px;line-height:1.3;margin:6px 0 4px}.dprice.t{font-size:22px}
