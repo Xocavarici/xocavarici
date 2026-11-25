@@ -1,15 +1,17 @@
 import { auth, db } from "./firebase.js";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { ref, onValue, set, update, push, remove, serverTimestamp, query, limitToLast, orderByChild, equalTo, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+import { ref, onValue, set, update, push, remove, get, serverTimestamp, query, orderByChild, equalTo, limitToLast, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
-/* ---------- Köməkçilər ---------- */
+/* ================= Köməkçilər ================= */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const ic = (n, c = "") => `<svg class="ic ${c}"><use href="#i-${n}"/></svg>`;
 const pad = n => String(n).padStart(2, "0");
 const fmtT = t => { if (!t) return ""; const d = new Date(t); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const money = n => Number(n || 0).toFixed(2) + " ₼";
+const fmtP = n => { n = Number(n || 0); return (n % 1 ? n.toFixed(2) : String(n)) + " ₼"; };
+const fmtAV = n => Number(n || 0).toFixed(2) + " AV";
+const initials = n => String(n || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase() || "?";
 const now = () => Date.now() + (S.off || 0);
 const ago = t => {
   if (!t) return "indicə";
@@ -17,91 +19,92 @@ const ago = t => {
   if (s < 60) return "indicə";
   const m = Math.floor(s / 60); if (m < 60) return m + " dəq əvvəl";
   const h = Math.floor(m / 60); if (h < 24) return h + " saat əvvəl";
-  return Math.floor(h / 24) + " gün əvvəl";
+  const d = Math.floor(h / 24); if (d < 30) return d + " gün əvvəl";
+  return fmtT(t).slice(0, 10);
 };
 const telHref = p => {
   let d = String(p || "").replace(/[^\d+]/g, ""); if (!d) return "";
   if (d[0] !== "+") { if (d.startsWith("994")) d = "+" + d; else if (d[0] === "0") d = "+994" + d.slice(1); }
   return "tel:" + d;
 };
-const callBtn = (p, label = "Zəng et") => telHref(p) ? `<a class="callbtn" href="${esc(telHref(p))}">${ic("phone")} ${label}</a>` : "";
-const navUrl = p => `https://www.google.com/maps/dir/?api=1&destination=${Number(p && p.lat)},${Number(p && p.lon)}`;
-let tt;
-function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3000); }
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch (e) { return []; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } };
+const lsAdd = (k, v, max = 200) => { const a = lsGet(k).filter(x => x !== v); a.unshift(v); lsSet(k, a.slice(0, max)); };
+let tt, toastFn = null;
+function toast(m, fn) {
+  const t = $("#toast"); t.textContent = m; toastFn = fn || null; t.style.pointerEvents = fn ? "auto" : "none";
+  t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), fn ? 5000 : 3000);
+}
+$("#toast").addEventListener("click", () => { if (toastFn) { const f = toastFn; toastFn = null; $("#toast").classList.remove("on"); f(); } });
 
 const AUTH_ERR = {
-  "auth/invalid-email": "E-poçt ünvanı düzgün deyil.",
-  "auth/missing-password": "Şifrəni yazın.",
-  "auth/invalid-credential": "E-poçt və ya şifrə yanlışdır.",
-  "auth/wrong-password": "E-poçt və ya şifrə yanlışdır.",
-  "auth/user-not-found": "Bu e-poçt ilə hesab tapılmadı.",
-  "auth/email-already-in-use": "Bu e-poçt artıq qeydiyyatdan keçib.",
-  "auth/weak-password": "Şifrə ən azı 6 simvol olmalıdır.",
-  "auth/too-many-requests": "Çox sayda cəhd edildi. Bir az sonra yenidən yoxlayın.",
-  "auth/network-request-failed": "İnternet bağlantısı yoxdur.",
-  "auth/user-disabled": "Bu hesab deaktiv edilib."
+  "auth/invalid-email": "E-poçt ünvanı düzgün deyil.", "auth/missing-password": "Şifrəni yazın.",
+  "auth/invalid-credential": "E-poçt və ya şifrə yanlışdır.", "auth/wrong-password": "E-poçt və ya şifrə yanlışdır.",
+  "auth/user-not-found": "Bu e-poçt ilə hesab tapılmadı.", "auth/email-already-in-use": "Bu e-poçt artıq qeydiyyatdan keçib.",
+  "auth/weak-password": "Şifrə ən azı 6 simvol olmalıdır.", "auth/too-many-requests": "Çox sayda cəhd edildi. Bir az sonra yenidən yoxlayın.",
+  "auth/network-request-failed": "İnternet bağlantısı yoxdur.", "auth/user-disabled": "Bu hesab deaktiv edilib."
 };
 const authMsg = e => AUTH_ERR[e && e.code] || "Xəta baş verdi. Yenidən cəhd edin.";
-const dbMsg = e => (e && /permission/i.test(e.code + e.message)) ? "Bu əməliyyat üçün icazəniz yoxdur." : "Xəta baş verdi. İnternet bağlantısını yoxlayın.";
+const dbMsg = e => (e && /permission/i.test((e.code || "") + (e.message || ""))) ? "Bu əməliyyat üçün icazəniz yoxdur." : "Xəta baş verdi. İnternet bağlantısını yoxlayın.";
 
-const PROMOS = {
-  XOCAVAR10: "İlk səfərə 10% endirim",
-  XOSGELDIN: "Xoş gəlmisiniz: 2 ₼ endirim",
-  YENI2026: "Yeni il kampaniyası: 5% endirim"
-};
-const CLASSES = { econ: { n: "Ekonom", m: 1, d: "Sərfəli və rahat" }, comf: { n: "Komfort", m: 1.3, d: "Geniş və rahat avtomobil" }, biz: { n: "Biznes", m: 1.7, d: "Premium sinif" } };
-const PAYS = { cash: "Nağd", bal: "Balans" };
-const FRESH_MS = 30 * 60 * 1000; // 30 dəqiqədən köhnə açıq sifarişlər sürücü siyahısında göstərilmir
+const CATS = [
+  { k: "bike", n: "Velosiped", i: "bike" }, { k: "frame", n: "Velosiped Çərçivəsi", i: "frame" },
+  { k: "gear", n: "Sürət Ötürücü", i: "cog" }, { k: "brake", n: "Tormuz Sistemi", i: "disc" },
+  { k: "light", n: "İşıq Sistemi", i: "lamp" }, { k: "lock", n: "Kilid və Aksesuar", i: "lock" }, { k: "other", n: "Digər", i: "dots" }
+];
+const catName = k => (CATS.find(c => c.k === k) || { n: "Digər" }).n;
+const CITIES = ["Xocavar İçi", "Masallı", "Lənkəran", "Bakı", "Sumqayıt", "Xırdalan", "Gəncə", "Mingəçevir", "Şəki", "Naxçıvan", "Digər"];
+const COND = { new: "Yeni", used: "İşlənmiş" };
 
-/* ---------- Vəziyyət ---------- */
+/* ================= Vəziyyət ================= */
 const S = {
-  user: null, profile: {}, orders: {}, app: null, dest: null, pos: null, cls: "econ", pay: "cash", otab: "active",
-  unsubs: [], registering: false, sub: null, subUn: null, back: null, chatCtx: null, off: 0,
-  live: {}, priv: {}, watched: new Set(), seen: {}, unread: {},
-  dOpen: {}, dMine: {}, dPriv: {}, drvOn: false, dErr: false
+  user: null, profile: {}, wallet: {}, cfg: { boostCost: 3, boostDays: 3 }, off: 0,
+  listings: {}, mine: {}, extra: {}, photos: {}, chats: {}, chatSeen: {}, chatsInit: false, tx: {}, anns: {},
+  stack: [], cur: null, subUn: null, ignorePop: false, openChat: null, chatAttach: null,
+  mtab: "active", htab: "viewed", city: "", f: { q: "", cat: "", city: "", sort: "new", min: "", max: "", cond: "" },
+  annShown: new Set(), annBusy: false, annInit: false, unsubs: [], registering: false, heroT: null, fetching: new Set()
 };
-let map, meMarker, accCircle, destMarker, mapReady = false, firstFix = false, watchId = null, installEv = null;
-let drvUns = [], drvPriv = {};
+try { S.city = localStorage.getItem("xi_city") || ""; } catch (e) { }
+let installEv = null;
 
 function detach() {
   S.unsubs.forEach(u => { try { u(); } catch (e) { } }); S.unsubs = [];
-  stopDriverFeed();
-  S.watched = new Set(); S.live = {}; S.priv = {}; S.seen = {}; S.unread = {};
+  Object.assign(S, { profile: {}, wallet: {}, listings: {}, mine: {}, chats: {}, chatSeen: {}, chatsInit: false, tx: {} });
+  clearInterval(S.heroT);
 }
-function listen(r, cb) { const u = onValue(r, cb, () => toast("Məlumat oxunarkən xəta baş verdi.")); S.unsubs.push(u); }
+function listen(r, cb, err) { const u = onValue(r, cb, err || (() => toast("Məlumat oxunarkən xəta baş verdi."))); S.unsubs.push(u); }
 
-/* ---------- Giriş / qeydiyyat ---------- */
+/* ================= Giriş / qeydiyyat ================= */
 onAuthStateChanged(auth, u => {
   $("#boot").classList.add("hide");
   detach();
   if (!u) {
-    S.user = null; S.profile = {}; S.orders = {}; S.app = null;
-    closeSub(); closeModal(); stopGeo(); updatePill();
-    $("#auth").classList.remove("hide"); $("#app").classList.add("hide");
+    S.user = null; closeAll(); closeModal();
+    $("#auth").classList.remove("hide"); $("#app").classList.add("hide"); updateBadges();
     return;
   }
   S.user = u;
   $("#auth").classList.add("hide"); $("#app").classList.remove("hide");
+  buildHome();
+  const uid = u.uid;
   S.unsubs.push(onValue(ref(db, ".info/serverTimeOffset"), s => { S.off = s.val() || 0; }));
-  listen(ref(db, `users/${u.uid}`), s => {
+  listen(ref(db, `users/${uid}`), s => {
     if (!s.exists()) {
-      if (!S.registering) set(ref(db, `users/${u.uid}`), { name: u.displayName || "", email: u.email || "", phone: "", balance: 0, createdAt: serverTimestamp() }).catch(() => { });
+      if (!S.registering) set(ref(db, `users/${uid}`), { name: u.displayName || "", email: u.email || "", phone: "", createdAt: serverTimestamp() }).catch(() => { });
       return;
     }
-    S.profile = s.val() || {};
-    renderProfile(); renderFavs(); renderOrders(); refreshSub("promo"); refreshSub("settings");
+    S.profile = s.val() || {}; renderAll(); refreshSub("profile");
   });
-  listen(ref(db, `orders/${u.uid}`), s => { S.orders = s.val() || {}; renderOrders(); });
-  listen(ref(db, `driver_applications/${u.uid}`), s => {
-    const prev = S.app && S.app.status;
-    S.app = s.exists() ? s.val() : null;
-    syncDriverFeed(); renderProfile(); updatePill();
-    if ((S.app && S.app.status) !== prev) refreshSub("driver");
-  });
-  requestAnimationFrame(() => { if (!mapReady) initMap(); else { map.invalidateSize(); startGeo(); } });
-  renderProfile(); renderFavs(); renderOrders();
+  listen(ref(db, `wallets/${uid}`), s => { S.wallet = s.val() || {}; renderProfile(); refreshSub("wallet"); });
+  listen(ref(db, "config"), s => { S.cfg = Object.assign({ boostCost: 3, boostDays: 3 }, s.val() || {}); refreshSub("wallet", "listing"); }, () => { });
+  listen(query(ref(db, "listings"), limitToLast(150)), s => { S.listings = s.val() || {}; renderAll(); refreshSub("listing", "browse"); });
+  listen(query(ref(db, "listings"), orderByChild("uid"), equalTo(uid)), s => { S.mine = s.val() || {}; renderMine(); refreshSub("listing"); });
+  listen(query(ref(db, `av_tx/${uid}`), limitToLast(60)), s => { S.tx = s.val() || {}; renderHistory(); refreshSub("wallet"); }, () => { });
+  listen(ref(db, `user_chats/${uid}`), s => onChats(s.val() || {}));
+  refreshBell();
+  renderAll();
+  handleHash();
 });
-
 $("#fIn").addEventListener("submit", async e => {
   e.preventDefault(); const b = $("#inBtn"); b.disabled = true; $("#inErr").textContent = "";
   try { await signInWithEmailAndPassword(auth, $("#inEmail").value.trim(), $("#inPass").value); }
@@ -117,109 +120,239 @@ $("#fUp").addEventListener("submit", async e => {
   try {
     const c = await createUserWithEmailAndPassword(auth, email, $("#upPass").value);
     try { await updateProfile(c.user, { displayName: name }); } catch (x) { }
-    await set(ref(db, `users/${c.user.uid}`), { name, phone, email, balance: 0, createdAt: serverTimestamp() });
+    await set(ref(db, `users/${c.user.uid}`), { name, phone, email, createdAt: serverTimestamp() });
   } catch (er) { $("#upErr").textContent = er && er.code ? authMsg(er) : dbMsg(er); }
   S.registering = false; b.disabled = false;
 });
 
-/* ---------- Naviqasiya ---------- */
+/* ================= Naviqasiya ================= */
 function showTab(v) {
-  closeSub();
+  closeAll();
   $$("#views > .view").forEach(x => x.classList.toggle("on", x.id === "v-" + v));
-  $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
-  if (v === "home" && map) setTimeout(() => map.invalidateSize(), 50);
+  $$("#nav button[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+}
+function openSub(name, arg) {
+  S.stack.push({ name, arg });
+  try { history.pushState({ s: S.stack.length }, ""); } catch (e) { }
+  drawSub();
+}
+function replaceSub(name, arg) { S.stack[S.stack.length - 1] = { name, arg }; drawSub(); }
+function backSub() { if (!S.stack.length) return; try { history.back(); } catch (e) { S.stack.pop(); drawSub(); } }
+function closeAll() {
+  const n = S.stack.length; if (!n) return;
+  S.stack = []; drawSub(); S.ignorePop = true;
+  try { history.go(-n); } catch (e) { S.ignorePop = false; }
+}
+window.addEventListener("popstate", () => {
+  if (S.ignorePop) { S.ignorePop = false; return; }
+  if (S.stack.length) { S.stack.pop(); drawSub(); }
+});
+function drawSub() {
+  if (S.subUn) { try { S.subUn(); } catch (e) { } S.subUn = null; }
+  const t = S.stack[S.stack.length - 1], el = $("#sub");
+  $("#app").classList.toggle("insub", !!t);
+  if (!t) { el.classList.remove("on"); S.cur = null; return; }
+  const s = SUB[t.name]; S.cur = t;
+  $("#subTitle").textContent = typeof s.title === "function" ? s.title(t.arg) : s.title;
+  $("#subRight").innerHTML = s.right ? s.right(t.arg) : "";
+  const b = $("#subBody"); b.className = "subbody" + (s.flush ? " flush" : ""); b.innerHTML = s.render(t.arg); b.scrollTop = 0;
+  el.classList.add("on"); if (s.mount) s.mount(t.arg, b);
+}
+function refreshSub(...names) {
+  const t = S.cur; if (!t || !names.includes(t.name)) return;
+  const s = SUB[t.name]; if (!s.live) return;
+  const b = $("#subBody"), y = ($(".dscroll", b) || b).scrollTop;
+  if (s.upd) { s.upd(t.arg, b); return; }
+  $("#subTitle").textContent = typeof s.title === "function" ? s.title(t.arg) : s.title;
+  b.innerHTML = s.render(t.arg); ($(".dscroll", b) || b).scrollTop = y; if (s.mount) s.mount(t.arg, b);
+}
+function renderAll() { renderHomeGrid(); renderMine(); renderHistory(); renderProfile(); updateBadges(); }
+
+/* ================= Modal ================= */
+function modal(html) { $("#msheet").innerHTML = html; $("#modal").classList.remove("hide"); return $("#msheet"); }
+function closeModal() { $("#modal").classList.add("hide"); $("#msheet").innerHTML = ""; }
+function ask(msg, okText = "Bəli", danger = true) {
+  return new Promise(res => {
+    const m = modal(`<h3>${esc(msg)}</h3><button class="btn ${danger ? "red" : ""}" id="aok">${esc(okText)}</button><button class="btn ghost" id="ano">Xeyr</button>`);
+    $("#aok", m).onclick = () => { closeModal(); res(true); };
+    $("#ano", m).onclick = () => { closeModal(); res(false); };
+  });
 }
 
+/* ================= Elan məlumatları ================= */
+const getL = id => S.listings[id] || S.mine[id] || S.extra[id] || null;
+const isBoosted = l => l && l.boostedUntil && l.boostedUntil > now();
+const visible = l => l && l.status === "active" && !l.blocked;
+function sortL(arr) { return arr.sort((a, b) => (isBoosted(b[1]) - isBoosted(a[1])) || ((b[1].createdAt || 0) - (a[1].createdAt || 0))); }
+async function fetchL(id) {
+  if (S.fetching.has(id) || getL(id)) return; S.fetching.add(id);
+  try { const s = await get(ref(db, `listings/${id}`)); if (s.exists()) { S.extra[id] = s.val(); renderHistory(); refreshSub("listing"); } } catch (e) { }
+  S.fetching.delete(id);
+}
+const favSet = () => S.profile.favs || {};
+function card(id, l) {
+  const fav = !!favSet()[id];
+  return `<article class="lc" data-act="open" data-id="${esc(id)}"><div class="lc-img">${l.thumb ? `<img src="${l.thumb}" alt="" loading="lazy">` : `<span class="noimg">${ic("bike", "xl")}</span>`}${isBoosted(l) ? `<span class="vip">${ic("bolt")} VIP</span>` : ""}${l.status === "sold" ? '<span class="soldtag">Satılıb</span>' : ""}<button class="fav ${fav ? "on" : ""}" data-act="fav" data-id="${esc(id)}" aria-label="Sevimlilərə əlavə et">${ic("heart")}</button></div>
+  <div class="lc-b"><h4>${esc(l.title)}</h4><div class="pr">${fmtP(l.price)}</div><small>${esc(l.city || "")} · ${ago(l.createdAt)}</small></div></article>`;
+}
+const emptyBox = (icon, h, p, btn = "") => `<div class="empty">${ic(icon)}<h3>${h}</h3><p>${p}</p>${btn}</div>`;
+
+/* ================= Ana səhifə ================= */
+function buildHome() {
+  const el = $("#v-home");
+  el.innerHTML = `<header class="top"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span><em>Daha yaxın, daha rahat!</em></div></div>
+    <div class="hicons">
+    <button class="circ" data-act="chats" aria-label="Mesajlar">${ic("chat")}<i class="badge hide" id="bChat">0</i></button>
+    <button class="circ" data-act="bell" aria-label="Bildirişlər">${ic("bell")}<i class="dotg hide" id="bBell"></i></button></div></header>
+    <form class="search" id="hs"><div class="sbox">${ic("search")}<input id="hq" placeholder="Velosiped axtar…" enterkeyhint="search" autocomplete="off"></div><button type="button" class="fbtn" data-act="filters" aria-label="Filtr">${ic("filter")}</button></form>
+    <div class="scroll" id="hscroll">
+      <div class="hero" id="hero">
+        <div class="slide s1"><h3>Xocavar İçi</h3><p>Daha yaxın, daha rahat!</p><button class="go" data-act="browse">Elanlara bax</button><svg class="bk" viewBox="0 0 64 40"><use href="#i-bike"/></svg></div>
+        <div class="slide s2"><h3>Aksesuarlarda ən yaxşı seçim!</h3><p>Kilid, işıq, tormuz və daha çox</p><button class="go" data-act="cat" data-k="lock">Bax</button><svg class="bk" viewBox="0 0 48 48"><use href="#i-lock"/></svg></div>
+        <div class="slide s3"><h3>Elanını pulsuz yerləşdir</h3><p>Bir neçə saniyəyə satışa çıxar</p><button class="go" data-act="add">Elan ver</button><svg class="bk" viewBox="0 0 24 24"><use href="#i-tag"/></svg></div>
+      </div><div class="dots" id="dots"><i class="on"></i><i></i><i></i></div>
+      <div class="cats"><button class="cat" data-act="cat" data-k="">${ic("all")}<span>Hamısı</span></button>${CATS.map(c => `<button class="cat" data-act="cat" data-k="${c.k}">${ic(c.i)}<span>${esc(c.n)}</span></button>`).join("")}</div>
+      <div class="promoban" data-act="sub" data-n="wallet"><b>AV pulu ilə elanını önə çıxar!</b><em>Promokod daxil et</em>${ic("bolt")}</div>
+      <div class="cityrow"><button class="pill" data-act="cityPick">${ic("pin")}<span id="cityLbl">${esc(S.city || "Bütün şəhərlər")}</span>${ic("down", "sm")}</button></div>
+      <div class="sech"><h2>Ən yeni elanlar</h2><button data-act="browse">Hamısına bax ${ic("chev")}</button></div>
+      <div class="grid" id="hgrid"></div>
+    </div>`;
+  const hero = $("#hero"), dots = $$("#dots i");
+  hero.addEventListener("scroll", () => { const i = Math.round(hero.scrollLeft / Math.max(1, hero.clientWidth)); dots.forEach((d, k) => d.classList.toggle("on", k === i)); });
+  clearInterval(S.heroT);
+  S.heroT = setInterval(() => { if (!$("#v-home").classList.contains("on") || S.stack.length) return; const i = (Math.round(hero.scrollLeft / Math.max(1, hero.clientWidth)) + 1) % 3; hero.scrollTo({ left: i * hero.clientWidth, behavior: "smooth" }); }, 4500);
+  $("#hs").addEventListener("submit", e => { e.preventDefault(); const q = $("#hq").value.trim(); $("#hq").blur(); S.f = Object.assign(blankF(), { q }); openSub("browse", {}); });
+}
+const blankF = () => ({ q: "", cat: "", city: S.city || "", sort: "new", min: "", max: "", cond: "" });
+function renderHomeGrid() {
+  const g = $("#hgrid"); if (!g) return;
+  let arr = sortL(Object.entries(S.listings).filter(([, l]) => visible(l)));
+  if (S.city) arr = arr.filter(([, l]) => l.city === S.city);
+  arr = arr.slice(0, 12);
+  g.innerHTML = arr.length ? arr.map(([id, l]) => card(id, l)).join("") : `<div style="grid-column:1/-1">${emptyBox("tag", "Hələ elan yoxdur", S.city ? "Bu şəhər üçün elan tapılmadı." : "İlk elanı siz yerləşdirin.", '<button class="btn" data-act="add">Elan ver</button>')}</div>`;
+}
+
+/* ================= Elanlarım ================= */
+function renderMine() {
+  const el = $("#v-mine"); if (!el) return;
+  const arr = Object.entries(S.mine).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+  const f = { active: arr.filter(([, l]) => l.status === "active" && !l.blocked), sold: arr.filter(([, l]) => l.status === "sold"), hidden: arr.filter(([, l]) => l.status === "hidden" || l.blocked) };
+  const list = f[S.mtab] || [];
+  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div></header>
+  <div class="scroll"><h1 class="ptitle">Elanlarım</h1>
+  <div class="tabs">${[["active", "Aktiv"], ["sold", "Satılıb"], ["hidden", "Gizli"]].map(([k, n]) => `<button class="${S.mtab === k ? "on" : ""}" data-act="mtab" data-v="${k}">${n} (${f[k].length})</button>`).join("")}</div>
+  <div class="list">${list.length ? list.map(([id, l]) => mineItem(id, l)).join("") : emptyBox("tag", "Elan yoxdur", S.mtab === "active" ? "İlk elanınızı yerləşdirin, alıcılar sizinlə birbaşa əlaqə saxlasın." : "Bu bölmədə elan yoxdur.", S.mtab === "active" ? `<button class="btn" data-act="add">${ic("plus")} Elan ver</button>` : "")}</div></div>`;
+}
+function mineItem(id, l) {
+  const b = isBoosted(l);
+  return `<div class="mi"><div class="mi-top" data-act="open" data-id="${esc(id)}"><div class="mi-img">${l.thumb ? `<img src="${l.thumb}" alt="">` : ic("bike")}</div>
+  <div class="mi-b"><div class="row"><span class="st ${l.blocked ? "r" : l.status === "sold" ? "d" : l.status === "hidden" ? "p" : ""}">${l.blocked ? "Bloklanıb" : l.status === "sold" ? "Satılıb" : l.status === "hidden" ? "Gizli" : "Aktiv"}</span>${b ? `<span class="st p">${ic("bolt", "sm")} VIP</span>` : ""}</div><h4>${esc(l.title)}</h4><div class="pr">${fmtP(l.price)}</div><small>${ago(l.createdAt)}</small></div></div>
+  <div class="mi-acts"><button class="chipb" data-act="edit" data-id="${esc(id)}">${ic("edit")} Redaktə</button>${l.status === "active" && !l.blocked ? `<button class="chipb a" data-act="boost" data-id="${esc(id)}">${ic("bolt")} ${b ? "VIP aktivdir" : "Önə çıxar"}</button>` : ""}
+  ${l.status === "active" ? `<button class="chipb g" data-act="setst" data-id="${esc(id)}" data-v="sold">${ic("check")} Satıldı</button>` : `<button class="chipb g" data-act="setst" data-id="${esc(id)}" data-v="active">${ic("check")} Aktiv et</button>`}
+  <button class="chipb r" data-act="del" data-id="${esc(id)}">${ic("trash")}</button></div></div>`;
+}
+
+/* ================= Tarixçə ================= */
+function renderHistory() {
+  const el = $("#v-history"); if (!el) return;
+  let body = "";
+  if (S.htab === "viewed") {
+    const ids = lsGet("xi_recent"); ids.forEach(fetchL);
+    const arr = ids.map(id => [id, getL(id)]).filter(([, l]) => l && !l.blocked);
+    body = arr.length ? `<div class="grid">${arr.map(([id, l]) => card(id, l)).join("")}</div>` : emptyBox("eye", "Baxılan elan yoxdur", "Baxdığınız elanlar burada görünəcək.");
+  } else if (S.htab === "favs") {
+    const ids = Object.keys(favSet()); ids.forEach(fetchL);
+    const arr = ids.map(id => [id, getL(id)]).filter(([, l]) => l && !l.blocked);
+    body = arr.length ? `<div class="grid">${arr.map(([id, l]) => card(id, l)).join("")}</div>` : emptyBox("heart", "Sevimli elan yoxdur", "Elanın üzərindəki ürək işarəsinə basaraq sevimlilərə əlavə edin.");
+  } else {
+    const arr = Object.values(S.tx).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    body = arr.length ? `<div class="list">${arr.map(txRow).join("")}</div>` : emptyBox("coin", "Əməliyyat yoxdur", "AV pulu ilə bağlı əməliyyatlarınız burada görünəcək.");
+  }
+  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div></header>
+  <div class="scroll"><h1 class="ptitle">Tarixçə</h1><div class="tabs">${[["viewed", "Baxılanlar"], ["favs", "Sevimlilər"], ["av", "AV əməliyyatları"]].map(([k, n]) => `<button class="${S.htab === k ? "on" : ""}" data-act="htab" data-v="${k}">${n}</button>`).join("")}</div>${body}</div>`;
+}
+const txRow = t => `<div class="tx"><span class="coin" style="background:var(--gl)">${ic("coin")}</span><div><b>${esc(t.note || "Əməliyyat")}</b><small>${fmtT(t.ts)}</small></div><span class="am ${t.amount >= 0 ? "p" : "m"}">${t.amount >= 0 ? "+" : ""}${Number(t.amount).toFixed(2)} AV</span></div>`;
+
+/* ================= Profil ================= */
+function renderProfile() {
+  const el = $("#v-profile"); if (!el) return;
+  const p = S.profile, u = S.user || {}, name = p.name || u.displayName || "İstifadəçi", unread = unreadTotal();
+  const row = (icon, label, attrs, extra = "") => `<button class="mrow" ${attrs}>${ic(icon)}<span>${label}</span>${extra}${ic("chev", "sm")}</button>`;
+  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div><button class="circ" data-act="sub" data-n="settings" aria-label="Ayarlar">${ic("gear")}</button></header>
+  <div class="scroll"><button class="phead" data-act="sub" data-n="edit"><div class="ava">${esc(initials(name))}</div><div class="pinfo"><h2>${esc(name)}</h2><p>${esc(p.phone || u.email || "")}</p><span class="vbadge">${ic("shield")}Təsdiqlənmiş hesab</span></div>${ic("chev", "sm")}</button>
+  <div class="avcard"><span class="coin">${ic("coin")}</span><div><small>AV balansı</small><b>${Number(S.wallet.balance || 0).toFixed(2)} AV</b></div><button class="btn" data-act="sub" data-n="wallet">${ic("plus")} Yüklə</button></div>
+  <div class="menu">${row("grid", "Elanlarım", 'data-act="tab" data-v="mine"')}${row("heart", "Sevimlilər", 'data-act="favtab"')}${row("chat", "Mesajlarım", 'data-act="chats"', unread ? `<span class="tag">${unread}</span>` : "")}
+  ${row("coin", "AV pulu və promokodlar", 'data-act="sub" data-n="wallet"')}${row("help", "Dəstək və yardım", 'data-act="sub" data-n="support"')}${row("info", "Tətbiq haqqında", 'data-act="sub" data-n="about"')}${row("shield", "Təhlükəsizlik", 'data-act="sub" data-n="security"')}${row("logout", "Hesabdan çıxış", 'data-act="logout"')}</div>
+  <button class="supcard" data-act="sub" data-n="support">${ic("headset")}<div><b>24/7 Dəstək</b><small>Hər zaman sizin üçün</small></div>${ic("chev", "sm")}</button></div>`;
+}
+
+/* ================= Bildiriş nişanları ================= */
+const unreadTotal = () => Object.values(S.chats).reduce((a, c) => a + (Number(c.unread) || 0), 0);
+const annActive = a => a && a.active !== false && (!a.expiresAt || a.expiresAt > now());
+function refreshBell() {
+  const seen = lsGet("xi_ann_seen"), n = Object.entries(S.anns).filter(([id, a]) => annActive(a) && !seen.includes(id)).length;
+  const d = $("#bBell"); if (d) d.classList.toggle("hide", !n);
+}
+function updateBadges() {
+  const n = unreadTotal(), b = $("#bChat"); if (b) { b.textContent = n > 99 ? "99+" : n; b.classList.toggle("hide", !n); }
+  document.title = (n ? `(${n}) ` : "") + "Xocavar İçi — Alver";
+  refreshBell();
+}
+
+/* ================= Əməliyyatlar ================= */
 const A = {
   tab: b => showTab(b.dataset.v),
-  authTab: b => {
-    $$("#authTabs button").forEach(x => x.classList.toggle("on", x === b));
-    $("#fIn").classList.toggle("hide", b.dataset.v !== "in"); $("#fUp").classList.toggle("hide", b.dataset.v !== "up");
-  },
+  authTab: b => { $$("#authTabs button").forEach(x => x.classList.toggle("on", x === b)); $("#fIn").classList.toggle("hide", b.dataset.v !== "in"); $("#fUp").classList.toggle("hide", b.dataset.v !== "up"); },
   forgot: async () => {
-    const em = $("#inEmail").value.trim();
-    if (!em) { $("#inErr").textContent = "Əvvəl e-poçt ünvanınızı yazın."; return; }
+    const em = $("#inEmail").value.trim(); if (!em) { $("#inErr").textContent = "Əvvəl e-poçt ünvanınızı yazın."; return; }
     try { await sendPasswordResetEmail(auth, em); toast("Şifrə bərpa linki e-poçtunuza göndərildi."); } catch (e) { $("#inErr").textContent = authMsg(e); }
   },
-  locate: () => { if (S.pos && map) map.setView([S.pos.lat, S.pos.lon], 16); else { toast("Konum hələ müəyyən edilməyib."); startGeo(); } },
-  geoRetry: () => { stopGeo(); firstFix = false; startGeo(); },
-  clearDest: () => { clearDest(); },
-  sheetToggle: () => setCompact(!$("#sheet").classList.contains("compact")),
-  saveFav: async () => {
-    if (!S.dest) return;
-    try { await push(ref(db, `users/${S.user.uid}/favorites`), { name: S.dest.text, lat: S.dest.lat, lon: S.dest.lon }); toast("Sevimlilərə əlavə edildi."); } catch (e) { toast(dbMsg(e)); }
-  },
-  quick: b => {
-    const k = b.dataset.k, a = S.profile[k];
-    if (a) { setDest({ lat: a.lat, lon: a.lon, text: a.name }); toast((k === "home" ? "Ev" : "İş") + " ünvanı hədəf seçildi."); }
-    else openPicker(k === "home" ? "Ev ünvanını seçin" : "İş ünvanını seçin", d => saveAddr(k, d));
-  },
-  taxi: () => openClassSheet(),
-  trips: () => { S.otab = "history"; renderOrders(); showTab("orders"); },
-  pay: () => openPaySheet(),
-  order: () => openConfirm(),
-  otab: b => { S.otab = b.dataset.v; renderOrders(); },
-  cancelOrder: async b => {
-    if (!(await ask("Sifarişi ləğv etmək istəyirsiniz?", "Bəli, ləğv et"))) return;
-    const id = b.dataset.id, uid = S.user.uid;
-    try {
-      const l = S.live[id];
-      if (l && (l.status === "open" || l.status === "accepted")) await update(ref(db, `live_orders/${id}`), { status: "cancelled", cancelledAt: serverTimestamp() });
-      await update(ref(db, `orders/${uid}/${id}`), { status: "cancelled", cancelledAt: serverTimestamp() });
-      toast("Sifariş ləğv edildi.");
-    } catch (e) { toast(dbMsg(e)); }
-  },
+  back: () => backSub(), mclose: () => closeModal(),
   sub: b => openSub(b.dataset.n),
-  back: () => { const b = S.back; S.back = null; closeSub(); if (b) openSub(b); },
-  goto: b => {
-    const k = b.dataset.k; let a;
-    if (k === "fav") a = (S.profile.favorites || {})[b.dataset.id]; else a = S.profile[k];
-    if (!a) return;
-    setDest({ lat: a.lat, lon: a.lon, text: a.name }); showTab("home");
+  add: () => openSub("add", {}),
+  open: b => openListing(b.dataset.id),
+  edit: b => openSub("add", { id: b.dataset.id }),
+  browse: () => { S.f = blankF(); openSub("browse", {}); },
+  filters: () => { S.f = Object.assign(blankF(), { q: $("#hq") ? $("#hq").value.trim() : "" }); openSub("browse", { filters: true }); },
+  cat: b => { S.f = Object.assign(blankF(), { cat: b.dataset.k }); openSub("browse", {}); },
+  fav: async b => {
+    const id = b.dataset.id, on = !!favSet()[id];
+    try { await update(ref(db, `users/${S.user.uid}/favs`), { [id]: on ? null : true }); } catch (e) { toast(dbMsg(e)); }
   },
-  delAddr: async b => {
-    if (!(await ask("Bu ünvanı silmək istəyirsiniz?", "Sil"))) return;
-    const k = b.dataset.k; const p = k === "fav" ? `users/${S.user.uid}/favorites/${b.dataset.id}` : `users/${S.user.uid}/${k}`;
-    try { await remove(ref(db, p)); toast("Ünvan silindi."); } catch (e) { toast(dbMsg(e)); }
+  favtab: () => { S.htab = "favs"; renderHistory(); showTab("history"); },
+  mtab: b => { S.mtab = b.dataset.v; renderMine(); },
+  htab: b => { S.htab = b.dataset.v; renderHistory(); },
+  cityPick: () => openCityPicker(),
+  chats: () => openSub("chats"),
+  bell: () => { SUB.notif.seen = null; openSub("notif"); },
+  setst: async b => {
+    try { await update(ref(db, `listings/${b.dataset.id}`), { status: b.dataset.v }); toast(b.dataset.v === "sold" ? "Elan «Satılıb» olaraq işarələndi." : "Elan yenidən aktivdir."); } catch (e) { toast(dbMsg(e)); }
   },
-  editAddr: b => { const k = b.dataset.k; openPicker(k === "home" ? "Ev ünvanını seçin" : "İş ünvanını seçin", d => saveAddr(k, d)); },
-  addFav: () => openPicker("Yeni sevimli ünvan", async d => {
-    try { await push(ref(db, `users/${S.user.uid}/favorites`), { name: d.text, lat: d.lat, lon: d.lon }); toast("Ünvan əlavə edildi."); } catch (e) { toast(dbMsg(e)); }
-  }),
+  del: async b => {
+    if (!(await ask("Elanı həmişəlik silmək istəyirsiniz?", "Sil"))) return;
+    const id = b.dataset.id;
+    try { await update(ref(db), { [`listings/${id}`]: null, [`listing_photos/${id}`]: null }); toast("Elan silindi."); if (S.cur && S.cur.name === "listing") backSub(); } catch (e) { toast(dbMsg(e)); }
+  },
+  boost: b => boostListing(b.dataset.id),
+  msg: b => openChatFor(b.dataset.id),
+  share: async b => {
+    const id = b.dataset.id, url = location.origin + location.pathname + "#l=" + id, l = getL(id);
+    try { if (navigator.share) await navigator.share({ title: l ? l.title : "Elan", url }); else { await navigator.clipboard.writeText(url); toast("Link kopyalandı."); } } catch (e) { }
+  },
+  report: b => { const l = getL(b.dataset.id); openSub("support", `Şikayət: «${l ? l.title : ""}» elanı (ID: ${b.dataset.id}). Səbəb: `); },
   logout: async () => { if (await ask("Hesabdan çıxmaq istəyirsiniz?", "Çıx")) { try { await signOut(auth); } catch (e) { toast("Xəta baş verdi."); } } },
-  mclose: () => closeModal(),
   install: async () => { if (installEv) { installEv.prompt(); await installEv.userChoice; installEv = null; refreshSub("about"); } },
-  topup: () => toast("Balans artırma tezliklə əlavə olunacaq."),
-  resetPass: async () => {
-    try { await sendPasswordResetEmail(auth, S.user.email); toast("Şifrə dəyişmə linki e-poçtunuza göndərildi."); } catch (e) { toast(authMsg(e)); }
+  resetPass: async () => { try { await sendPasswordResetEmail(auth, S.user.email); toast("Şifrə dəyişmə linki e-poçtunuza göndərildi."); } catch (e) { toast(authMsg(e)); } },
+  toggleNotify: async () => {
+    const on = !(S.profile.settings && S.profile.settings.notify === false);
+    try { await update(ref(db, `users/${S.user.uid}/settings`), { notify: !on }); } catch (e) { toast(dbMsg(e)); }
   },
-  toggleNotif: async () => {
-    const v = !(S.profile.settings && S.profile.settings.notifications === false);
-    try { await update(ref(db, `users/${S.user.uid}/settings`), { notifications: !v }); } catch (e) { toast(dbMsg(e)); }
+  askPerm: async () => {
+    if (!("Notification" in window)) { toast("Bu brauzer bildirişləri dəstəkləmir."); return; }
+    try { const r = await Notification.requestPermission(); toast(r === "granted" ? "Bildirişlər aktiv edildi." : "Bildiriş icazəsi verilmədi."); } catch (e) { }
+    refreshSub("settings", "notif");
   },
-  supportRejected: () => openSub("support", "Salam! Şoför ərizəm rədd edilib. Zəhmət olmasa səbəbi izah edin və yenidən müraciət etmək üçün kömək edin."),
-  chat: b => {
-    const oid = b.dataset.oid, role = b.dataset.role; let name, phone;
-    if (role === "customer") { const l = S.live[oid] || {}, pv = S.priv[oid] || {}; name = l.driverName || pv.driverName || "Sürücü"; phone = pv.driverPhone; }
-    else { const pv = S.dPriv[oid] || {}, l = S.dMine[oid] || {}; name = pv.customerName || l.name || "Müştəri"; phone = pv.customerPhone; }
-    S.unread[oid] = false;
-    if (S.sub === "driverpanel") S.back = "driverpanel";
-    openSub("ochat", { oid, role, name, phone });
-  },
-  accept: b => acceptOrder(b.dataset.oid),
-  finish: async b => {
-    if (!(await ask("Səfəri tamamladınız?", "Bəli, tamamla"))) return;
-    try { await update(ref(db, `live_orders/${b.dataset.oid}`), { status: "completed", completedAt: serverTimestamp() }); toast("Səfər tamamlandı."); } catch (e) { toast(dbMsg(e)); }
-  },
-  release: async b => {
-    if (!(await ask("Bu sifarişdən imtina etmək istəyirsiniz?", "Bəli, imtina et"))) return;
-    const id = b.dataset.oid;
-    try {
-      await update(ref(db, `order_private/${id}`), { driverId: null, driverName: null, driverPhone: null });
-      await update(ref(db, `live_orders/${id}`), { status: "open", driverId: null, driverName: null, car: null, acceptedAt: null });
-      toast("Sifarişdən imtina etdiniz.");
-    } catch (e) { toast(dbMsg(e)); }
-  }
+  annClose: () => closeAnn()
 };
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
@@ -227,579 +360,421 @@ document.addEventListener("click", e => {
 });
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEv = e; });
 
-/* ---------- Modal ---------- */
-function modal(html) { $("#msheet").innerHTML = html; $("#modal").classList.remove("hide"); return $("#msheet"); }
-function closeModal() { $("#modal").classList.add("hide"); $("#msheet").innerHTML = ""; }
-function ask(msg, okText = "Bəli") {
-  return new Promise(res => {
-    const m = modal(`<h3>${esc(msg)}</h3><button class="btn red" id="aok">${esc(okText)}</button><button class="btn ghost" id="ano">Xeyr</button>`);
-    $("#aok", m).onclick = () => { closeModal(); res(true); };
-    $("#ano", m).onclick = () => { closeModal(); res(false); };
+function openListing(id) {
+  lsAdd("xi_recent", id, 30); renderHistory();
+  openSub("listing", { id });
+}
+function handleHash() {
+  const m = /^#l=(.+)$/.exec(location.hash || ""); if (!m) return;
+  try { history.replaceState(null, "", location.pathname); } catch (e) { }
+  openListing(m[1]);
+}
+function openCityPicker() {
+  const m = modal(`<h3>Şəhər seçin</h3><button class="opt ${!S.city ? "on" : ""}" data-c=""><div><b>Bütün şəhərlər</b></div>${!S.city ? ic("check") : ""}</button>${CITIES.map(c => `<button class="opt ${S.city === c ? "on" : ""}" data-c="${esc(c)}"><div><b>${esc(c)}</b></div>${S.city === c ? ic("check") : ""}</button>`).join("")}`);
+  $$(".opt", m).forEach(b => b.onclick = () => {
+    S.city = b.dataset.c; try { localStorage.setItem("xi_city", S.city); } catch (e) { }
+    $("#cityLbl").textContent = S.city || "Bütün şəhərlər"; closeModal(); renderHomeGrid();
   });
 }
 
-/* ---------- Xəritə / GPS ---------- */
-function initMap() {
-  mapReady = true;
-  map = L.map("map", { zoomControl: false, attributionControl: true }).setView([40.4093, 49.8671], 14);
-  map.attributionControl.setPrefix(false);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
-  map.on("click", e => setDestFromMap(e.latlng));
-  if ("ResizeObserver" in window) new ResizeObserver(syncSheetH).observe($("#sheet"));
-  syncSheetH();
-  startGeo();
+/* ================= Şəkil sıxışdırma ================= */
+function shrink(src, max, q) {
+  return new Promise((res, rej) => {
+    const im = new Image(); im.onerror = () => rej(new Error("img")); im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height)), w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+      const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(im, 0, 0, w, h); res(c.toDataURL("image/jpeg", q));
+    }; im.src = src;
+  });
 }
-function syncSheetH() { if (map) map.invalidateSize(); $("#v-home").style.setProperty("--sheet-h", $("#sheet").offsetHeight + "px"); }
-function geoBanner(msg) { const b = $("#geoBanner"); if (!msg) { b.classList.add("hide"); return; } $("#geoMsg").textContent = msg; b.classList.remove("hide"); }
-function startGeo() {
-  if (watchId !== null) return;
-  if (!("geolocation" in navigator)) { geoBanner("Brauzeriniz konum xidmətini dəstəkləmir. Təxmini konum istifadə olunur."); ipLocate(); return; }
-  watchId = navigator.geolocation.watchPosition(onPos, onGeoErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+const readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onerror = () => rej(new Error("read")); r.onload = () => res(r.result); r.readAsDataURL(f); });
+
+/* ================= AV pulu: önə çıxarma ================= */
+async function boostListing(id) {
+  const l = getL(id); if (!l) return;
+  if (isBoosted(l)) { toast("Bu elan artıq VIP statusdadır."); return; }
+  const cost = Number(S.cfg.boostCost), days = Number(S.cfg.boostDays), bal = Number(S.wallet.balance || 0);
+  if (bal < cost) {
+    const m = modal(`<h3>AV balansı çatmır</h3><div class="info">Elanı ${days} gün önə çıxarmaq üçün <b>${fmtAV(cost)}</b> lazımdır. Balansınız: <b>${fmtAV(bal)}</b>.</div><button class="btn" id="bw">Promokod daxil et</button><button class="btn ghost" data-act="mclose">Bağla</button>`);
+    $("#bw", m).onclick = () => { closeModal(); openSub("wallet"); }; return;
+  }
+  const m = modal(`<h3>Elanı önə çıxar</h3><div class="info">«${esc(l.title)}» elanı <b>${days} gün</b> ərzində siyahının yuxarısında və VIP nişanı ilə göstəriləcək.</div><div class="kv"><span>Qiymət</span><b>${fmtAV(cost)}</b></div><div class="kv"><span>Balansınız</span><b>${fmtAV(bal)}</b></div><button class="btn" id="bok">${ic("bolt")} Təsdiqlə</button><button class="btn ghost" data-act="mclose">Ləğv et</button>`);
+  $("#bok", m).onclick = async () => {
+    const btn = $("#bok", m); btn.disabled = true;
+    const uid = S.user.uid, tx = push(ref(db, `av_tx/${uid}`)).key;
+    try {
+      await update(ref(db), {
+        [`listings/${id}/boostedUntil`]: Math.round(now() + days * 86400000),
+        [`wallets/${uid}/balance`]: +(bal - cost).toFixed(2),
+        [`av_tx/${uid}/${tx}`]: { type: "boost", amount: -cost, note: `«${l.title}» önə çıxarıldı`, ts: serverTimestamp() }
+      });
+      closeModal(); toast("Elan önə çıxarıldı.");
+    } catch (e) { btn.disabled = false; toast(dbMsg(e)); }
+  };
 }
-function stopGeo() { if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; } }
-function drawMe(lat, lon, acc) {
-  if (!map) return;
-  const ll = [lat, lon];
-  if (!meMarker) {
-    meMarker = L.marker(ll, { icon: L.divIcon({ className: "me", html: '<div class="me-dot"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false, zIndexOffset: 1000 }).addTo(map);
-    accCircle = L.circle(ll, { radius: acc, color: "#1a73e8", weight: 1, fillColor: "#1a73e8", fillOpacity: .15, interactive: false }).addTo(map);
-  } else { meMarker.setLatLng(ll); accCircle.setLatLng(ll); accCircle.setRadius(acc); }
-}
-function onPos(p) {
-  const c = p.coords;
-  S.pos = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 50, src: "gps" };
-  drawMe(S.pos.lat, S.pos.lon, S.pos.acc);
-  geoBanner("");
-  if (!firstFix) { firstFix = true; map.setView([S.pos.lat, S.pos.lon], 16); }
-  if (S.dest) renderDestInfo();
-}
-function onGeoErr(e) {
-  if (e.code === 1) {
-    stopGeo();
-    geoBanner("Konum icazəsi rədd edildi. Dəqiq mövqeyiniz üçün brauzer ayarlarında konuma icazə verin. Hələlik təxmini (IP) konum göstərilir.");
-  } else if (e.code === 2) geoBanner("Konum müəyyən edilə bilmədi. GPS-i yandırın. Hələlik təxmini konum göstərilir.");
-  else geoBanner("Dəqiq konum hələ tapılmadı. Açıq havada gözləyin və ya yenidən cəhd edin.");
-  if (!S.pos || S.pos.src !== "gps") ipLocate();
-}
-async function ipLocate() {
-  if (S.pos && S.pos.src === "gps") return;
+async function redeemPromo(e) {
+  e.preventDefault(); const err = $("#pe"), btn = $("#pb"); err.textContent = "";
+  const code = $("#pc").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length < 3) { err.textContent = "Promokodu düzgün yazın."; return; }
+  btn.disabled = true; const uid = S.user.uid;
   try {
-    const r = await fetch("https://ipapi.co/json/"); const j = await r.json();
-    if (j && j.latitude && (!S.pos || S.pos.src !== "gps")) {
-      S.pos = { lat: j.latitude, lon: j.longitude, acc: 5000, src: "ip" };
-      drawMe(S.pos.lat, S.pos.lon, S.pos.acc);
-      if (!firstFix) map.setView([S.pos.lat, S.pos.lon], 12);
+    for (let t = 0; t < 3; t++) {
+      const ps = await get(ref(db, `promo_codes/${code}`));
+      if (!ps.exists()) { err.textContent = "Belə promokod tapılmadı."; break; }
+      const p = ps.val();
+      if (p.active !== true) { err.textContent = "Bu promokod aktiv deyil."; break; }
+      if ((p.used || 0) >= (p.maxUses || 0)) { err.textContent = "Bu promokodun istifadə limiti bitib."; break; }
+      if (p.expiresAt && now() > p.expiresAt) { err.textContent = "Bu promokodun müddəti bitib."; break; }
+      if ((await get(ref(db, `promo_redeem/${code}/${uid}`))).exists()) { err.textContent = "Bu promokodu artıq istifadə etmisiniz."; break; }
+      const cur = Number((await get(ref(db, `wallets/${uid}/balance`))).val() || 0), tx = push(ref(db, `av_tx/${uid}`)).key;
+      const upd = {
+        [`promo_redeem/${code}/${uid}`]: true,
+        [`wallets/${uid}/balance`]: +(cur + Number(p.amount)).toFixed(2),
+        [`wallets/${uid}/lastPromo`]: code,
+        [`promo_codes/${code}/used`]: (p.used || 0) + 1,
+        [`av_tx/${uid}/${tx}`]: { type: "promo", amount: Number(p.amount), note: `Promokod: ${code}`, ts: serverTimestamp() }
+      };
+      try { await update(ref(db), upd); toast(`Balansınıza ${fmtAV(p.amount)} əlavə olundu.`); const i = $("#pc"); if (i) i.value = ""; break; }
+      catch (er) { if (t === 2) err.textContent = "Promokod tətbiq olunmadı. Bir az sonra yenidən cəhd edin."; else await new Promise(r => setTimeout(r, 500)); }
     }
-  } catch (e) { /* IP konumu alına bilmədi */ }
+  } catch (er) { err.textContent = dbMsg(er); }
+  btn.disabled = false;
 }
 
-/* ---------- Ünvan axtarışı ---------- */
-async function geocode(q) {
-  let u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=az&q=${encodeURIComponent(q)}`;
-  const c = S.pos || (map && { lat: map.getCenter().lat, lon: map.getCenter().lng });
-  if (c) u += `&viewbox=${c.lon - .5},${c.lat + .5},${c.lon + .5},${c.lat - .5}&bounded=0`;
-  const r = await fetch(u); if (!r.ok) throw new Error("geo");
-  return (await r.json()).map(x => {
-    const p = String(x.display_name || "").split(",").map(s => s.trim());
-    return { lat: +x.lat, lon: +x.lon, text: p.slice(0, 3).join(", "), title: p[0], sub: p.slice(1, 4).join(", ") };
-  });
+/* ================= Söhbət ================= */
+const chatList = () => Object.entries(S.chats).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+function openChatFor(listingId) {
+  const l = getL(listingId); if (!l) return;
+  if (l.uid === S.user.uid) { toast("Bu sizin öz elanınızdır."); return; }
+  openSub("chat", { cid: `${listingId}_${S.user.uid}`, listingId });
 }
-async function revGeo(lat, lon) {
+function onChats(v) {
+  const first = !S.chatsInit, uid = S.user && S.user.uid; S.chats = v;
+  Object.entries(v).forEach(([cid, c]) => {
+    const prev = S.chatSeen[cid]; S.chatSeen[cid] = c.ts || 0;
+    if (!first && c.lastFrom && c.lastFrom !== uid && (c.ts || 0) > (prev || 0) && S.openChat !== cid) incoming(cid, c);
+  });
+  S.chatsInit = true; updateBadges(); renderProfile(); refreshSub("chats");
+  if (S.chatAttach) S.chatAttach();
+  if (S.openChat && v[S.openChat] && v[S.openChat].unread > 0) markRead(S.openChat);
+}
+function incoming(cid, c) {
+  if (S.profile.settings && S.profile.settings.notify === false) return;
+  toast(`${c.other || "Yeni mesaj"}: ${c.last || ""}`, () => openSub("chat", { cid }));
+  try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { }
+  sysNotify(c.other || "Yeni mesaj", c.last || "", cid);
+}
+async function sysNotify(title, body, tag) {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=az&lat=${lat}&lon=${lon}`);
-    const j = await r.json(); if (!j.display_name) return null;
-    return String(j.display_name).split(",").map(s => s.trim()).slice(0, 3).join(", ");
-  } catch (e) { return null; }
+    if (!("Notification" in window) || Notification.permission !== "granted" || !document.hidden) return;
+    const reg = await navigator.serviceWorker.getRegistration(); if (!reg) return;
+    reg.showNotification(title, { body, tag, icon: "icon-192.png", badge: "icon-192.png" });
+  } catch (e) { }
 }
-function bindSearch(input, list, onPick, onState) {
-  let timer, seq = 0, items = [];
-  input.addEventListener("input", () => {
-    clearTimeout(timer);
-    const q = input.value.trim();
-    if (q.length < 3) { list.classList.add("hide"); list.innerHTML = ""; onState && onState(false); return; }
-    timer = setTimeout(async () => {
-      const my = ++seq;
-      list.classList.remove("hide"); list.innerHTML = '<div class="note">Axtarılır…</div>'; onState && onState(true);
-      try {
-        items = await geocode(q); if (my !== seq) return;
-        list.innerHTML = items.length ? items.map((x, i) => `<button class="ri" data-i="${i}"><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></button>`).join("") : '<div class="note">Nəticə tapılmadı.</div>';
-      } catch (e) { if (my === seq) list.innerHTML = '<div class="note">Axtarış zamanı xəta baş verdi. İnterneti yoxlayın.</div>'; }
-    }, 500);
-  });
-  list.addEventListener("click", e => {
-    const b = e.target.closest(".ri"); if (!b) return;
-    const d = items[+b.dataset.i]; if (d) onPick(d);
-  });
-  input.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+function markRead(cid) { if (S.user && S.chats[cid] && S.chats[cid].unread > 0) update(ref(db, `user_chats/${S.user.uid}/${cid}`), { unread: 0 }).catch(() => { }); }
+function chatCtx(a) {
+  const c = S.chats[a.cid], uid = S.user.uid;
+  if (c) return { cid: a.cid, exists: true, other: c.other || "İstifadəçi", otherId: c.otherId, title: c.title || "", listingId: c.listingId };
+  const l = getL(a.listingId) || {};
+  return { cid: a.cid, exists: false, other: l.sellerName || "Satıcı", otherId: l.uid, title: l.title || "", listingId: a.listingId, thumb: l.thumb };
 }
-function openPicker(title, onPick) {
-  const m = modal(`<h3>${esc(title)}</h3><div class="srch">${ic("search")}<input id="pk" placeholder="Ünvanı yazın" autocomplete="off"></div><div id="pkr" class="res hide"></div>
-    ${S.dest ? '<button class="btn ghost" id="pkd">Seçilmiş hədəfdən istifadə et</button>' : ""}
-    ${S.pos && S.pos.src === "gps" ? '<button class="btn ghost" id="pkc">Cari konumumdan istifadə et</button>' : ""}
-    <button class="btn ghost" data-act="mclose">Bağla</button>`);
-  const done = d => { closeModal(); onPick(d); };
-  bindSearch($("#pk", m), $("#pkr", m), done);
-  const d = $("#pkd", m); if (d) d.onclick = () => done({ lat: S.dest.lat, lon: S.dest.lon, text: S.dest.text });
-  const c = $("#pkc", m); if (c) c.onclick = async () => { const t = (await revGeo(S.pos.lat, S.pos.lon)) || "Cari konumum"; done({ lat: S.pos.lat, lon: S.pos.lon, text: t }); };
-  setTimeout(() => $("#pk", m) && $("#pk", m).focus(), 100);
-}
-async function saveAddr(k, d) {
-  try { await set(ref(db, `users/${S.user.uid}/${k}`), { name: d.text, lat: d.lat, lon: d.lon }); toast((k === "home" ? "Ev" : "İş") + " ünvanı yadda saxlanıldı."); } catch (e) { toast(dbMsg(e)); }
-}
-
-/* ---------- Hədəf və alt panel ---------- */
-function setCompact(on) { $("#sheet").classList.toggle("compact", on); setTimeout(syncSheetH, 60); }
-(function sheetSwipe() {
-  const h = $("#sheetHandle"); let y0 = null;
-  h.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
-  h.addEventListener("touchend", e => {
-    if (y0 === null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
-    if (dy > 25) setCompact(true); else if (dy < -25) setCompact(false);
-  });
-})();
-function setDest(d) {
-  S.dest = d;
-  const pinHtml = '<svg class="pinmk" viewBox="0 0 34 42"><path d="M17 41S3 27.5 3 16a14 14 0 0 1 28 0c0 11.5-14 25-14 25z" fill="#22b14c" stroke="#fff" stroke-width="2.5"/><circle cx="17" cy="16" r="5.5" fill="#fff"/></svg>';
-  if (destMarker) destMarker.setLatLng([d.lat, d.lon]);
-  else destMarker = L.marker([d.lat, d.lon], { icon: L.divIcon({ className: "me", html: pinHtml, iconSize: [0, 0] }), interactive: false }).addTo(map);
-  renderDest();
-  setCompact(true);
-  setTimeout(() => map.panTo([d.lat, d.lon]), 120);
-}
-function renderDestInfo() {
-  const d = S.dest; if (!d) return;
-  const c = S.pos || (map && { lat: map.getCenter().lat, lon: map.getCenter().lng });
-  let t = String(d.text).split(",")[0];
-  if (c) { const km = distKm(c, d); t += ` · ~${km.toFixed(1)} km · ~${money(priceFor(km, S.cls))}`; }
-  $("#destTxt").textContent = t;
-}
-function renderDest() {
-  const d = S.dest;
-  $("#destRow").classList.toggle("hide", !d); $("#qx").classList.toggle("hide", !d);
-  if (d) { renderDestInfo(); $("#q").value = d.text; }
-  $("#qr").classList.add("hide"); $("#qr").innerHTML = ""; $("#sheet").classList.remove("searching");
-}
-function clearDest() {
-  S.dest = null; if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
-  $("#q").value = ""; renderDest(); setCompact(false);
-}
-async function setDestFromMap(ll) {
-  setDest({ lat: ll.lat, lon: ll.lng, text: "Xəritədən seçilmiş nöqtə" });
-  const t = await revGeo(ll.lat, ll.lng);
-  if (t && S.dest && S.dest.lat === ll.lat) { S.dest.text = t; renderDest(); }
-}
-bindSearch($("#q"), $("#qr"), d => setDest(d), on => $("#sheet").classList.toggle("searching", on));
-$("#q").addEventListener("input", () => { if (!$("#q").value.trim()) $("#sheet").classList.remove("searching"); });
-$("#q").addEventListener("focus", () => { if ($("#sheet").classList.contains("compact") && !S.dest) setCompact(false); });
-
-/* ---------- Sifariş ---------- */
-const rad = x => x * Math.PI / 180;
-function distKm(a, b) {
-  const R = 6371, dLa = rad(b.lat - a.lat), dLo = rad(b.lon - a.lon);
-  const h = Math.sin(dLa / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLo / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-const priceFor = (km, cls) => Math.max(2.5, (1.2 + 0.55 * km) * CLASSES[cls].m);
-
-function openClassSheet() {
-  const m = modal(`<h3>Taksi növü</h3>${Object.entries(CLASSES).map(([k, v]) => `<button class="opt ${S.cls === k ? "on" : ""}" data-k="${k}">${ic("car")}<div><b>${v.n}</b><small>${v.d}</small></div>${S.cls === k ? ic("check") : ""}</button>`).join("")}<button class="btn ghost" data-act="mclose">Bağla</button>`);
-  $$(".opt", m).forEach(b => b.onclick = () => { S.cls = b.dataset.k; closeModal(); renderDestInfo(); toast("Seçildi: " + CLASSES[S.cls].n); });
-}
-function openPaySheet() {
-  const m = modal(`<h3>Ödəniş üsulu</h3>${Object.entries(PAYS).map(([k, v]) => `<button class="opt ${S.pay === k ? "on" : ""}" data-k="${k}">${ic(k === "cash" ? "card" : "wallet")}<div><b>${v}</b><small>${k === "bal" ? "Balans: " + money(S.profile.balance) : "Səfərin sonunda sürücüyə"}</small></div>${S.pay === k ? ic("check") : ""}</button>`).join("")}<button class="btn ghost" data-act="mclose">Bağla</button>`);
-  $$(".opt", m).forEach(b => b.onclick = () => { S.pay = b.dataset.k; closeModal(); toast("Ödəniş: " + PAYS[S.pay]); });
-}
-function openConfirm() {
-  if (!S.dest) { toast("Əvvəlcə gedəcəyiniz ünvanı seçin."); setCompact(false); $("#q").focus(); return; }
-  if (Object.values(S.orders).some(o => ["active", "accepted"].includes(o.status))) { toast("Artıq aktiv sifarişiniz var."); S.otab = "active"; renderOrders(); showTab("orders"); return; }
-  const c = S.pos || { lat: map.getCenter().lat, lon: map.getCenter().lng };
-  const km = distKm(c, S.dest), price = priceFor(km, S.cls);
-  const m = modal(`<h3>Sifarişi təsdiqlə</h3>
-    <div class="kv"><span>Haradan</span><b>${S.pos ? "Cari konumum" : "Xəritə mərkəzi"}</b></div>
-    <div class="kv"><span>Hara</span><b>${esc(S.dest.text)}</b></div>
-    <div class="kv"><span>Məsafə</span><b>~${km.toFixed(1)} km</b></div>
-    <div class="kv"><span>Taksi növü</span><b>${CLASSES[S.cls].n}</b></div>
-    <div class="kv"><span>Ödəniş</span><b>${PAYS[S.pay]}</b></div>
-    <div class="kv"><span>Təxmini qiymət</span><b>${money(price)}</b></div>
-    <button class="btn" id="cok">Sifarişi təsdiqlə</button><button class="btn ghost" data-act="mclose">Ləğv et</button>`);
-  $("#cok", m).onclick = () => placeOrder(c, km, price, $("#cok", m));
-}
-async function placeOrder(c, km, price, btn) {
-  btn.disabled = true;
-  const uid = S.user.uid, id = push(ref(db, `orders/${uid}`)).key;
-  const from = { lat: c.lat, lon: c.lon, text: S.pos ? "Cari konumum" : "Xəritədə seçilmiş nöqtə" };
-  const to = { lat: S.dest.lat, lon: S.dest.lon, text: S.dest.text };
-  const base = { cls: S.cls, pay: S.pay, km: +km.toFixed(2), price: +price.toFixed(2) };
-  const name = S.profile.name || S.user.displayName || "", phone = S.profile.phone || "";
-  let shared = true;
-  try {
-    await set(ref(db, `live_orders/${id}`), { uid, name: name.split(" ")[0] || "Müştəri", status: "open", from, to, ...base, createdAt: serverTimestamp() });
-    await set(ref(db, `order_private/${id}`), { uid, customerName: name, customerPhone: phone, createdAt: serverTimestamp() });
-  } catch (e) {
-    shared = false; console.warn("live order yazılmadı:", e);
-    try { await remove(ref(db, `live_orders/${id}`)); } catch (x) { }
-  }
-  try {
-    await set(ref(db, `orders/${uid}/${id}`), { status: "active", uid, name, phone, from, to, ...base, createdAt: serverTimestamp() });
-  } catch (e) { btn.disabled = false; toast(dbMsg(e)); return; }
-  closeModal();
-  toast(shared ? "Sifarişiniz sürücülərə göndərildi." : "Sifariş yadda saxlanıldı, amma sürücülərə göndərilə bilmədi.");
-  S.otab = "active"; renderOrders(); showTab("orders");
-}
-
-/* Sifarişi izləmə (müştəri tərəfi) */
-function effStatus(o) { const l = S.live[o.id]; if (l) return l.status === "open" ? "active" : l.status; return o.status; }
-function notifyChat(oid, chat, role) {
-  const n = chat.length, prev = S.seen[oid]; S.seen[oid] = n;
-  if (prev === undefined || n <= prev) return;
-  const last = chat[n - 1];
-  if (last && last.from !== role && !(S.sub === "ochat" && S.chatCtx && S.chatCtx.oid === oid)) {
-    S.unread[oid] = true; toast("Yeni mesaj: " + String(last.text).slice(0, 60));
-    try { navigator.vibrate && navigator.vibrate(150); } catch (e) { }
+async function sendChat(ctx, text) {
+  const uid = S.user.uid, mid = push(ref(db, `chats/${ctx.cid}/messages`)).key, ts = serverTimestamp(), me = S.profile.name || S.user.displayName || "İstifadəçi";
+  const last = text.slice(0, 100), upd = { [`chats/${ctx.cid}/messages/${mid}`]: { from: uid, text, ts } };
+  if (!ctx.exists) {
+    upd[`chats/${ctx.cid}/meta`] = { listingId: ctx.listingId, title: ctx.title, buyerId: uid, sellerId: ctx.otherId, buyerName: me, sellerName: ctx.other, createdAt: ts };
+    upd[`user_chats/${uid}/${ctx.cid}`] = { other: ctx.other, otherId: ctx.otherId, title: ctx.title, listingId: ctx.listingId, last, lastFrom: uid, ts, unread: 0 };
+    upd[`user_chats/${ctx.otherId}/${ctx.cid}`] = { other: me, otherId: uid, title: ctx.title, listingId: ctx.listingId, last, lastFrom: uid, ts, unread: 1 };
+    await update(ref(db), upd);
+  } else {
+    upd[`user_chats/${uid}/${ctx.cid}/last`] = last; upd[`user_chats/${uid}/${ctx.cid}/lastFrom`] = uid; upd[`user_chats/${uid}/${ctx.cid}/ts`] = ts;
+    upd[`user_chats/${ctx.otherId}/${ctx.cid}/last`] = last; upd[`user_chats/${ctx.otherId}/${ctx.cid}/lastFrom`] = uid; upd[`user_chats/${ctx.otherId}/${ctx.cid}/ts`] = ts;
+    await update(ref(db), upd);
+    try { await runTransaction(ref(db, `user_chats/${ctx.otherId}/${ctx.cid}/unread`), c => (Number(c) || 0) + 1); } catch (e) { }
   }
 }
-const chatArr = v => v && v.chat ? Object.values(v.chat).sort((a, b) => (a.ts || 0) - (b.ts || 0)) : [];
-function watchOrder(oid) {
-  if (S.watched.has(oid)) return; S.watched.add(oid);
-  S.unsubs.push(onValue(ref(db, `live_orders/${oid}`), s => {
-    const prev = S.live[oid] && S.live[oid].status;
-    const l = s.exists() ? s.val() : null; S.live[oid] = l;
-    if (l && prev === "open" && l.status === "accepted") toast("Sürücü sifarişinizi qəbul etdi.");
-    if (l && (l.status === "completed" || l.status === "cancelled") && S.orders[oid] && S.orders[oid].status !== l.status)
-      update(ref(db, `orders/${S.user.uid}/${oid}`), { status: l.status }).catch(() => { });
-    renderOrders();
-  }, () => { S.live[oid] = null; }));
-  S.unsubs.push(onValue(ref(db, `order_private/${oid}`), s => {
-    const v = s.exists() ? s.val() : null; S.priv[oid] = v;
-    notifyChat(oid, chatArr(v), "customer"); renderOrders();
-  }, () => { }));
+const msgsHtml = (arr, uid) => arr.map(m => `<div class="msg ${m.from === uid ? "u" : "a"}">${esc(m.text)}<small>${fmtT(m.ts)}</small></div>`).join("");
+
+/* ================= Elan pop-up (admin) və bildiriş siyahısı ================= */
+onValue(query(ref(db, "announcements"), limitToLast(30)), s => {
+  S.anns = s.val() || {}; S.annInit = true; refreshBell(); refreshSub("notif"); checkPopups();
+}, () => { });
+function checkPopups() {
+  if (S.annBusy || !S.annInit) return;
+  const pop = lsGet("xi_ann_pop");
+  const q = Object.entries(S.anns).filter(([id, a]) => annActive(a) && a.popup !== false && !S.annShown.has(id) && (a.repeat === true || !pop.includes(id))).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+  if (!q.length) return;
+  showAnn(q[0][0], q[0][1]);
+}
+const KIND = { info: "Məlumat", update: "Yenilik", promo: "Kampaniya", warning: "Diqqət" };
+function showAnn(id, a) {
+  S.annBusy = true; S.annShown.add(id); S.annCur = { id, a };
+  const k = KIND[a.kind] ? a.kind : "info";
+  $("#annCard").innerHTML = `<div class="ann-h ${k}"><button class="ann-x" data-act="annClose" aria-label="Bağla">${ic("x")}</button><small>${KIND[k]}</small><h3>${esc(a.title || "")}</h3></div><div class="ann-b">${esc(a.body || "")}</div><div class="ann-f"><button class="btn" data-act="annClose">Bağla</button></div>`;
+  $("#ann").classList.remove("hide");
+}
+function closeAnn() {
+  const c = S.annCur; $("#ann").classList.add("hide");
+  if (c) { if (!c.a.repeat) lsAdd("xi_ann_pop", c.id, 100); }
+  S.annCur = null; S.annBusy = false; setTimeout(checkPopups, 250);
 }
 
-/* ---------- Render: sifarişlər ---------- */
-const CAR_ILLU = `<svg viewBox="0 0 300 190" xmlns="http://www.w3.org/2000/svg"><g fill="#e8eefb"><rect x="30" y="100" width="46" height="70" rx="4"/><rect x="92" y="62" width="30" height="108"/><rect x="195" y="78" width="40" height="92"/><rect x="238" y="56" width="30" height="114"/><ellipse cx="60" cy="150" rx="55" ry="22"/><ellipse cx="240" cy="150" rx="55" ry="22"/></g><path d="M150 6c-14 0-24 10-24 23 0 17 24 38 24 38s24-21 24-38c0-13-10-23-24-23z" fill="#a8e0b9"/><circle cx="150" cy="29" r="8" fill="#fff"/><ellipse cx="150" cy="172" rx="100" ry="5" fill="#dde6f5"/><path d="M62 150c0-14 8-22 22-27l24-14c8-5 17-7 26-7h38c11 0 20 4 28 12l14 15c16 3 26 9 26 21v8H62z" fill="#22b14c"/><path d="M104 118l16-9c6-3 12-5 19-5h20l-4 22h-51z M165 104h12c7 0 13 3 18 8l9 10h-39z" fill="#14532d" opacity=".85"/><circle cx="104" cy="158" r="17" fill="#1f2937"/><circle cx="104" cy="158" r="8" fill="#9ca3af"/><circle cx="208" cy="158" r="17" fill="#1f2937"/><circle cx="208" cy="158" r="8" fill="#9ca3af"/></svg>`;
-const ST_MAP = { active: ["p", "Sürücü axtarılır"], accepted: ["", "Sürücü yolda"], completed: ["d", "Tamamlandı"], cancelled: ["c", "Ləğv edildi"] };
-function orderCard(o) {
-  const es = effStatus(o), pv = S.priv[o.id], st = ST_MAP[es] || ["", es];
-  let drv = "";
-  if (es === "accepted") {
-    const l = S.live[o.id] || {}, nm = l.driverName || (pv && pv.driverName) || "Sürücü";
-    drv = `<div class="drv"><div><b>${esc(nm)}</b><small>${esc(l.car || "")}</small></div><div class="acts">${pv && pv.driverPhone ? callBtn(pv.driverPhone) : '<span class="meta">Nömrə yüklənir…</span>'}<button class="callbtn alt" data-act="chat" data-oid="${esc(o.id)}" data-role="customer">${ic("chat")} Mesaj${S.unread[o.id] ? '<i class="dotb"></i>' : ""}</button></div></div>`;
-  }
-  const live = es === "active" || es === "accepted";
-  return `<div class="card"><div class="row"><span class="meta">${fmtT(o.createdAt)}</span><span class="st ${st[0]}">${st[1]}</span></div>
-    <div class="route"><div><i></i><span>${esc(o.from && o.from.text)}</span></div><div><i class="t"></i><span>${esc(o.to && o.to.text)}</span></div></div>
-    <div class="row"><span class="meta">${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")} · ${o.km || 0} km</span><span class="price">${money(o.price)}</span></div>
-    ${drv}${live ? `<button class="btn red" style="margin-top:12px" data-act="cancelOrder" data-id="${esc(o.id)}">Sifarişi ləğv et</button>` : ""}</div>`;
-}
-function renderOrders() {
-  const el = $("#ordBody"); if (!el) return;
-  $$("#otabs button").forEach(b => b.classList.toggle("on", b.dataset.v === S.otab));
-  const list = Object.entries(S.orders).map(([id, o]) => ({ id, ...o })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  list.forEach(o => { if (o.status === "active" && S.user) watchOrder(o.id); });
-  if (S.otab === "active") {
-    const a = list.filter(o => ["active", "accepted"].includes(effStatus(o)));
-    el.innerHTML = a.length ? a.map(orderCard).join("") :
-      `<div class="empty">${CAR_ILLU}<h3>Hazırda aktiv sifariş yoxdur</h3><p>Sifariş etmək üçün aşağıdakı düyməni basın</p><button class="btn" data-act="tab" data-v="home">${ic("car")} Sifariş et</button></div>`;
-  } else if (S.otab === "history") {
-    const h = list.filter(o => !["active", "accepted"].includes(effStatus(o)));
-    el.innerHTML = h.length ? h.map(orderCard).join("") :
-      `<div class="empty">${CAR_ILLU}<h3>Səfər tarixçəsi boşdur</h3><p>Tamamlanmış və ləğv edilmiş səfərləriniz burada görünəcək</p></div>`;
-  } else el.innerHTML = favHtml();
-}
+/* ================= Alt səhifələr ================= */
+const SUB = {};
 
-/* ---------- Render: sevimlilər ---------- */
-function addrRow(k, label, icon) {
-  const a = S.profile[k];
-  if (!a) return `<div class="addr"><button class="main" data-act="editAddr" data-k="${k}">${ic(icon)}<div><b>${label}</b><small>Ünvan əlavə et</small></div></button><span class="iconbtn">${ic("plus")}</span></div>`;
-  return `<div class="addr"><button class="main" data-act="goto" data-k="${k}">${ic(icon)}<div><b>${label}</b><small>${esc(a.name)}</small></div></button>
-    <button class="iconbtn" data-act="editAddr" data-k="${k}" aria-label="Dəyiş">${ic("edit")}</button><button class="iconbtn" data-act="delAddr" data-k="${k}" aria-label="Sil">${ic("trash")}</button></div>`;
-}
-function favHtml() {
-  const f = Object.entries(S.profile.favorites || {});
-  return `${addrRow("home", "Ev", "home")}${addrRow("work", "İş", "briefcase")}<div class="sec">Sevimli ünvanlar</div>
-    ${f.length ? f.map(([id, a]) => `<div class="addr"><button class="main" data-act="goto" data-k="fav" data-id="${esc(id)}">${ic("star")}<div><b>${esc(String(a.name).split(",")[0])}</b><small>${esc(a.name)}</small></div></button><button class="iconbtn" data-act="delAddr" data-k="fav" data-id="${esc(id)}" aria-label="Sil">${ic("trash")}</button></div>`).join("") : '<p class="meta" style="padding:4px 2px">Hələ sevimli ünvanınız yoxdur.</p>'}
-    <button class="btn ghost" style="margin-top:8px" data-act="addFav">${ic("plus")} Yeni ünvan əlavə et</button>`;
-}
-function renderFavs() { const el = $("#favBody"); if (el) el.innerHTML = favHtml(); if (S.otab === "favs") renderOrders(); }
-
-/* ---------- Render: profil ---------- */
-const isDriver = () => !!(S.app && S.app.status === "approved");
-function appTag() {
-  const a = S.app; if (!a) return "";
-  if (a.status === "approved") { const n = openList().length; return `<span class="tag st">${n ? n + " yeni" : "Aktiv"}</span>`; }
-  const m = { pending: ['p', "Yoxlanılır"], rejected: ["c", "Rədd edildi"] }[a.status];
-  return m ? `<span class="tag st ${m[0]}">${m[1]}</span>` : "";
-}
-function row(icon, label, act, extra = "", v = "") { return `<button class="mrow" data-act="${act[0]}" ${act[1] ? `data-n="${act[1]}"` : ""} ${v ? `data-v="${v}"` : ""}>${ic(icon)}<span>${label}</span>${extra}${ic("chev", "sm")}</button>`; }
-function renderProfile() {
-  const el = $("#profBody"); if (!el) return;
-  const p = S.profile, u = S.user || {};
-  el.innerHTML = `<button class="phead" data-act="sub" data-n="edit"><div class="ava"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.5"/><path d="M3 24c0-6 4-9 9-9s9 3 9 9z"/></svg></div>
-    <div class="pinfo"><h2>${esc(p.name || u.displayName || "İstifadəçi")}</h2><p>${esc(p.phone || u.email || "")}</p><span class="badge">${ic("shield")}Təsdiqlənmiş hesab</span></div>${ic("chev", "sm")}</button>
-    <div class="bal">${ic("wallet", "w")}<div><small>Balans</small><b>${Number(p.balance || 0).toFixed(2)} ₼</b></div><button class="btn" data-act="topup">${ic("plus")} Yüklə</button></div>
-    <div class="menu">
-      ${row("car", "Səfər tarixçəsi", ["trips"])}${row("star", "Sevimli ünvanlar", ["tab"], "", "favs")}
-      ${row("tag", "Promokodlar", ["sub", "promo"])}${isDriver() ? row("wheel", "Şoför paneli", ["sub", "driverpanel"], appTag()) : row("wheel", "Şoför ol", ["sub", "driver"], appTag())}
-      ${row("help", "Dəstək və yardım", ["sub", "support"])}${row("info", "Tətbiq haqqında", ["sub", "about"])}
-      ${row("shield", "Təhlükəsizlik", ["sub", "security"])}${row("logout", "Hesabdan çıxış", ["logout"])}
-    </div>
-    <button class="supcard" data-act="sub" data-n="support">${ic("headset")}<div><b>24/7 Dəstək</b><small>Hər zaman sizin üçün</small></div>${ic("chev", "sm")}</button>`;
-}
-
-/* ---------- Alt səhifələr ---------- */
-const SUB = {
-  edit: {
-    title: "Profili redaktə et",
-    render: () => `<form id="fe" class="form"><label>Ad Soyad<input id="en" required value="${esc(S.profile.name || "")}"></label><label>Telefon<input id="ep" type="tel" required value="${esc(S.profile.phone || "")}"></label><label>E-poçt<input value="${esc(S.user.email)}" disabled></label><button class="btn" style="font-size:18px">Yadda saxla</button></form>`,
-    mount: () => $("#fe").addEventListener("submit", async e => {
-      e.preventDefault(); const name = $("#en").value.trim(), phone = $("#ep").value.trim();
-      if (name.length < 3 || phone.replace(/\D/g, "").length < 9) { toast("Ad və telefonu düzgün yazın."); return; }
-      try { await update(ref(db, `users/${S.user.uid}`), { name, phone }); try { await updateProfile(auth.currentUser, { displayName: name }); } catch (x) { } toast("Profil yeniləndi."); closeSub(); } catch (er) { toast(dbMsg(er)); }
-    })
+/* --- Elan səhifəsi --- */
+SUB.listing = {
+  title: "Elan", live: true, flush: true,
+  right: a => `<button class="circ sm" data-act="share" data-id="${esc(a.id)}" aria-label="Paylaş">${ic("share")}</button>`,
+  render: a => {
+    const l = getL(a.id);
+    if (!l) { fetchL(a.id); return emptyBox("tag", "Elan yüklənir…", "Elan silinib və ya tapılmayıb ola bilər."); }
+    const uid = S.user.uid, own = l.uid === uid, ph = S.photos[a.id], imgs = ph && ph.length ? ph : (l.thumb ? [l.thumb] : []), fav = !!favSet()[a.id];
+    const gal = imgs.length ? imgs.map(s => `<img src="${s}" alt="">`).join("") : `<div class="ph">${ic("bike", "xl")}</div>`;
+    const tags = `<div class="tags"><span class="tag2">${ic("tag")}${esc(catName(l.category))}</span><span class="tag2">${ic("check")}${esc(COND[l.cond] || "")}</span>${l.city ? `<span class="tag2">${ic("pin")}${esc(l.city)}</span>` : ""}<span class="tag2">${ic("history")}${ago(l.createdAt)}</span></div>`;
+    let bar;
+    if (own) bar = `<div class="abar"><button class="btn ghost" data-act="edit" data-id="${esc(a.id)}">${ic("edit")} Redaktə</button><button class="btn" data-act="boost" data-id="${esc(a.id)}">${ic("bolt")} ${isBoosted(l) ? "VIP aktivdir" : "Önə çıxar"}</button></div>`;
+    else if (l.status === "sold") bar = `<div class="abar"><div class="info" style="flex:1;text-align:center">Bu elan satılıb.</div></div>`;
+    else bar = `<div class="abar"><button class="btn" data-act="msg" data-id="${esc(a.id)}">${ic("chat")} Mesaj yaz</button>${l.phone ? `<a class="btn ghost" style="text-decoration:none" href="${esc(telHref(l.phone))}">${ic("phone")} Zəng et</a>` : ""}</div>`;
+    return `<div class="dscroll"><div class="gal" id="gal">${gal}</div>
+    <div class="row"><div class="dprice">${fmtP(l.price)}</div><button class="circ sm" data-act="fav" data-id="${esc(a.id)}" style="color:${fav ? "var(--red)" : "inherit"}">${ic("heart", fav ? "fill" : "")}</button></div>
+    <div class="dtitle">${esc(l.title)}</div>${tags}
+    ${l.blocked ? '<div class="info bad">Bu elan inzibatçı tərəfindən bloklanıb.</div>' : ""}${isBoosted(l) ? `<div class="info ok">${ic("bolt", "sm")} VIP elan · ${fmtT(l.boostedUntil).slice(0, 10)} tarixinədək önə çıxarılıb</div>` : ""}
+    <div class="card"><div class="sec" style="margin:0 0 8px">Təsvir</div><div class="desc">${esc(l.desc || "Təsvir əlavə edilməyib.")}</div></div>
+    <div class="card seller"><div class="ava">${esc(initials(l.sellerName))}</div><div style="flex:1"><b>${esc(l.sellerName || "Satıcı")}</b><span class="meta">${own ? "Bu sizin elanınızdır" : "Satıcı"}</span></div></div>
+    ${own ? "" : `<button class="link" data-act="report" data-id="${esc(a.id)}">Elanı şikayət et</button>`}</div>${bar}`;
   },
-  settings: {
-    title: "Ayarlar",
-    render: () => {
-      const on = !(S.profile.settings && S.profile.settings.notifications === false);
-      return `<div class="menu">
-      <button class="setrow" data-act="sub" data-n="edit">${ic("user")}<span>Profili redaktə et</span>${ic("chev", "sm")}</button>
-      <button class="setrow" data-act="toggleNotif">${ic("info")}<span>Bildirişlər</span><i class="sw ${on ? "on" : ""}"></i></button>
-      <button class="setrow" data-act="sub" data-n="security">${ic("shield")}<span>Təhlükəsizlik</span>${ic("chev", "sm")}</button>
-      <button class="setrow" data-act="sub" data-n="about">${ic("info")}<span>Tətbiq haqqında</span>${ic("chev", "sm")}</button>
-      <button class="setrow" data-act="logout">${ic("logout")}<span>Hesabdan çıxış</span>${ic("chev", "sm")}</button></div>`;
+  mount: (a, b) => {
+    const l = getL(a.id); if (!l) return;
+    if (!S.photos[a.id] && !S.photoLoading) {
+      S.photoLoading = true;
+      get(ref(db, `listing_photos/${a.id}`)).then(s => { S.photos[a.id] = Object.values(s.val() || {}); }).catch(() => { S.photos[a.id] = []; }).finally(() => { S.photoLoading = false; refreshSub("listing"); });
     }
-  },
-  security: {
-    title: "Təhlükəsizlik",
-    render: () => `<div class="info">Hesab e-poçtu: <b>${esc(S.user.email)}</b></div>
-      <button class="btn ghost" data-act="resetPass">${ic("shield")} Şifrəni dəyiş (e-poçtla link)</button>
-      <div class="info">Şifrəni dəyişmək üçün e-poçtunuza təhlükəsiz link göndərilir. Şifrənizi heç kimlə bölüşməyin.</div>
-      <button class="btn red" data-act="logout">${ic("logout")} Hesabdan çıx</button>`
-  },
-  about: {
-    title: "Tətbiq haqqında",
-    render: () => `<div style="text-align:center;padding:10px"><svg class="lg" style="width:80px;height:70px"><use href="#i-logo"/></svg><h2 style="margin:8px 0 2px">Xocavar İçi</h2><p class="meta">Versiya 2.0.0</p></div>
-      <div class="info">Xocavar İçi — şəhər daxilində rahat və təhlükəsiz taksi sifarişi tətbiqidir. Sifariş verin, ünvanlarınızı yadda saxlayın, sürücü ilə əlaqə saxlayın və dəstək komandası ilə 24/7 yazışın.</div>
-      ${installEv ? `<button class="btn" style="font-size:18px" data-act="install">Ana ekrana əlavə et</button>` : '<div class="info">Brauzer menyusundan «Ana ekrana əlavə et» seçərək tətbiqi quraşdıra bilərsiniz.</div>'}
-      <button class="btn ghost" data-act="sub" data-n="support">${ic("headset")} Dəstəyə yaz</button>`
-  },
-  promo: {
-    title: "Promokodlar",
-    render: () => {
-      const l = Object.values(S.profile.promos || {});
-      return `<form id="fp" class="form"><label>Promokod<input id="pc" placeholder="Kodu daxil edin" autocapitalize="characters" required></label><button class="btn" style="font-size:18px">Aktivləşdir</button></form>
-      <div class="sec">Aktiv promokodlarım</div>${l.length ? l.map(p => `<div class="card"><div class="row"><b>${esc(p.code)}</b><span class="st">Aktiv</span></div><p class="meta" style="margin:6px 0 0">${esc(p.desc || "")}</p></div>`).join("") : '<p class="meta">Hələ promokodunuz yoxdur.</p>'}`;
-    },
-    mount: () => $("#fp").addEventListener("submit", async e => {
-      e.preventDefault(); const code = $("#pc").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-      if (!PROMOS[code]) { toast("Promokod düzgün deyil."); return; }
-      if ((S.profile.promos || {})[code]) { toast("Bu promokod artıq aktivdir."); return; }
-      try { await set(ref(db, `users/${S.user.uid}/promos/${code}`), { code, desc: PROMOS[code], ts: serverTimestamp() }); toast("Promokod aktivləşdirildi."); $("#pc").value = ""; } catch (er) { toast(dbMsg(er)); }
-    })
-  },
-  driver: { title: "Şoför ol", render: driverHtml, mount: driverMount },
-  driverpanel: { title: "Şoför paneli", render: () => '<div id="dpBody"></div>', mount: driverPanelMount },
-  support: { title: "24/7 Dəstək", chat: true, render: () => `<div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="1000" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`, mount: supportMount },
-  ochat: {
-    title: "Mesajlar", chat: true,
-    render: c => `<div class="callbar"><div><b>${esc(c.name)}</b><small>${esc(c.phone || "")}</small></div>${callBtn(c.phone)}</div><div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="500" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`,
-    mount: ochatMount
   }
 };
-function openSub(name, arg) {
-  closeSubCleanup();
-  const s = SUB[name]; if (!s) return;
-  if (name !== "ochat") S.back = null;
-  S.sub = name;
-  $("#subTitle").textContent = s.title;
-  const b = $("#subBody"); b.className = "subbody" + (s.chat ? " chatpage" : ""); b.innerHTML = s.render(arg);
-  $("#sub").classList.add("on");
-  if (s.mount) s.mount(arg);
-}
-function refreshSub(name) {
-  if (S.sub !== name || ["support", "ochat", "driverpanel"].includes(name)) return;
-  const s = SUB[name]; $("#subBody").innerHTML = s.render(); if (s.mount) s.mount();
-}
-function closeSubCleanup() { if (S.subUn) { try { S.subUn(); } catch (e) { } S.subUn = null; } S.chatCtx = null; }
-function closeSub() { closeSubCleanup(); S.sub = null; $("#sub").classList.remove("on"); }
 
-/* ---------- Şoför ol ---------- */
-function driverHtml() {
-  const a = S.app;
-  if (a && a.status === "pending") return `<div class="info wait"><b>Ərizəniz yoxlanılır</b><br>Ərizəniz qəbul edildi və yoxlanılır. Nəticə burada göstəriləcək.</div>${summary(a)}`;
-  if (a && a.status === "approved") return `<div class="info ok"><b>Qəbul edildi 🎉</b><br>Ərizəniz təsdiqləndi. İndi aktiv sifarişləri görə bilərsiniz.</div><button class="btn" style="font-size:18px" data-act="sub" data-n="driverpanel">${ic("wheel")} Şoför panelinə keç</button>${summary(a)}`;
-  if (a && a.status === "rejected") return `<div class="info bad"><b>Rədd edildi</b><br>${a.reason ? "Səbəb: " + esc(a.reason) : "Səbəb göstərilməyib."}</div>
-    <div class="info">Dəstək ilə əlaqə saxlayın. Rədd edilmiş ərizə ilə yenidən müraciət etmək üçün dəstək komandası sizə kömək edəcək.</div>
-    <button class="btn" style="font-size:18px" data-act="supportRejected">${ic("headset")} Dəstək ilə əlaqə saxlayın</button>${summary(a)}`;
-  return `<div class="info">Sürücü olmaq üçün məlumatlarınızı doldurun. Ərizə yoxlanıldıqdan sonra nəticə burada göstəriləcək.</div>
-  <form id="fd" class="form">
-    <label>Ad Soyad<input id="d_name" required value="${esc(S.profile.name || "")}"></label>
-    <label>Telefon<input id="d_phone" type="tel" required value="${esc(S.profile.phone || "")}"></label>
-    <label>Şəhər / rayon<input id="d_city" required></label>
-    <div class="grid2"><label>Marka<input id="d_make" required></label><label>Model<input id="d_model" required></label></div>
-    <div class="grid2"><label>İl<input id="d_year" type="number" inputmode="numeric" min="1990" max="2027" required></label><label>Rəng<input id="d_color" required></label></div>
-    <label>Dövlət nömrə nişanı<input id="d_plate" required placeholder="10-AA-123" autocapitalize="characters"></label>
-    <label>Sürücülük vəsiqəsi nömrəsi<input id="d_lic" required></label>
-    <p class="err" id="d_err"></p><button class="btn" id="d_btn" style="font-size:18px">Ərizə göndər</button></form>`;
-}
-function summary(a) {
-  return `<div class="card"><div class="kv"><span>Ad Soyad</span><b>${esc(a.fullName)}</b></div><div class="kv"><span>Şəhər</span><b>${esc(a.city)}</b></div><div class="kv"><span>Avtomobil</span><b>${esc(a.make)} ${esc(a.model)}, ${esc(a.year)}</b></div><div class="kv"><span>Nömrə</span><b>${esc(a.plate)}</b></div></div>`;
-}
-function driverMount() {
-  const f = $("#fd"); if (!f) return;
-  f.addEventListener("submit", async e => {
-    e.preventDefault(); const err = $("#d_err"), btn = $("#d_btn"); err.textContent = "";
-    const g = id => $("#" + id).value.trim();
-    const year = parseInt(g("d_year"), 10);
-    if (g("d_name").length < 3) { err.textContent = "Ad və soyadı tam yazın."; return; }
-    if (g("d_phone").replace(/\D/g, "").length < 9) { err.textContent = "Telefon nömrəsi düzgün deyil."; return; }
-    if (!(year >= 1990 && year <= 2027)) { err.textContent = "Avtomobilin ilini düzgün yazın (1990–2027)."; return; }
-    btn.disabled = true;
-    try {
-      await set(ref(db, `driver_applications/${S.user.uid}`), {
-        uid: S.user.uid, email: S.user.email, fullName: g("d_name"), phone: g("d_phone"), city: g("d_city"),
-        make: g("d_make"), model: g("d_model"), year, color: g("d_color"), plate: g("d_plate").toUpperCase(), license: g("d_lic"),
-        status: "pending", createdAt: serverTimestamp()
-      });
-      toast("Ərizəniz göndərildi.");
-    } catch (er) {
-      btn.disabled = false;
-      err.textContent = /permission/i.test(er.code + er.message) ? "Ərizə göndərilə bilmədi. Əvvəl müraciət etmisiniz — dəstək ilə əlaqə saxlayın." : "Xəta baş verdi. Yenidən cəhd edin.";
-    }
-  });
+/* --- Axtarış / filtr --- */
+SUB.browse = {
+  title: "Elanlar", live: true,
+  render: a => {
+    const f = S.f;
+    return `<form id="bf" class="form" style="gap:10px"><div class="sbox" style="background:#fff;box-shadow:var(--sh)">${ic("search")}<input id="bq" value="${esc(f.q)}" placeholder="Nə axtarırsınız?" autocomplete="off"></div>
+    <div class="chips" id="bc"><button type="button" class="${!f.cat ? "on" : ""}" data-k="">Hamısı</button>${CATS.map(c => `<button type="button" class="${f.cat === c.k ? "on" : ""}" data-k="${c.k}">${esc(c.n)}</button>`).join("")}</div>
+    <div id="bx" class="${a.filters ? "" : "hide"}" style="display:flex;flex-direction:column;gap:10px"><div class="grid2"><label>Min qiymət (₼)<input id="bmin" type="number" inputmode="decimal" value="${esc(f.min)}"></label><label>Max qiymət (₼)<input id="bmax" type="number" inputmode="decimal" value="${esc(f.max)}"></label></div>
+    <div class="grid2"><label>Şəhər<select id="bcity"><option value="">Hamısı</option>${CITIES.map(c => `<option ${f.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>Vəziyyət<select id="bcond"><option value="">Hamısı</option><option value="new" ${f.cond === "new" ? "selected" : ""}>Yeni</option><option value="used" ${f.cond === "used" ? "selected" : ""}>İşlənmiş</option></select></label></div></div>
+    <div class="grid2"><button type="button" class="btn ghost" id="bt">${ic("filter")} Filtr</button><label style="margin:0"><select id="bsort"><option value="new" ${f.sort === "new" ? "selected" : ""}>Ən yeni</option><option value="cheap" ${f.sort === "cheap" ? "selected" : ""}>Ən ucuz</option><option value="exp" ${f.sort === "exp" ? "selected" : ""}>Ən bahalı</option></select></label></div></form>
+    <div class="meta" id="bn"></div><div class="grid" id="bres" style="padding:0"></div>`;
+  },
+  mount: (a, b) => {
+    const read = () => { Object.assign(S.f, { q: $("#bq").value.trim(), min: $("#bmin").value, max: $("#bmax").value, city: $("#bcity").value, cond: $("#bcond").value, sort: $("#bsort").value }); drawBrowse(); };
+    $("#bf").addEventListener("submit", e => { e.preventDefault(); read(); $("#bq").blur(); });
+    $("#bq").addEventListener("input", read);
+    ["bmin", "bmax", "bcity", "bcond", "bsort"].forEach(i => $("#" + i).addEventListener("input", read));
+    $("#bt").onclick = () => $("#bx").classList.toggle("hide");
+    $("#bc").addEventListener("click", e => { const x = e.target.closest("button"); if (!x) return; S.f.cat = x.dataset.k; $$("#bc button").forEach(y => y.classList.toggle("on", y === x)); drawBrowse(); });
+    drawBrowse();
+  },
+  upd: () => drawBrowse()
+};
+function drawBrowse() {
+  const el = $("#bres"); if (!el) return; const f = S.f, q = f.q.toLowerCase();
+  let arr = Object.entries(S.listings).filter(([, l]) => visible(l));
+  if (f.cat) arr = arr.filter(([, l]) => l.category === f.cat);
+  if (f.city) arr = arr.filter(([, l]) => l.city === f.city);
+  if (f.cond) arr = arr.filter(([, l]) => l.cond === f.cond);
+  if (f.min !== "") arr = arr.filter(([, l]) => l.price >= Number(f.min));
+  if (f.max !== "") arr = arr.filter(([, l]) => l.price <= Number(f.max));
+  if (q) arr = arr.filter(([, l]) => (l.title + " " + (l.desc || "")).toLowerCase().includes(q));
+  if (f.sort === "cheap") arr.sort((a, b) => a[1].price - b[1].price); else if (f.sort === "exp") arr.sort((a, b) => b[1].price - a[1].price); else sortL(arr);
+  $("#bn").textContent = arr.length + " elan tapıldı";
+  el.innerHTML = arr.length ? arr.map(([id, l]) => card(id, l)).join("") : `<div style="grid-column:1/-1">${emptyBox("search", "Elan tapılmadı", "Axtarış və ya filtri dəyişib yenidən yoxlayın.")}</div>`;
 }
 
-/* ---------- Şoför paneli (canlı sifarişlər) ---------- */
-const openList = () => Object.entries(S.dOpen)
-  .filter(([, o]) => !o.createdAt || now() - o.createdAt < FRESH_MS)
-  .sort((a, b) => (b[1].createdAt || now()) - (a[1].createdAt || now()));
-function updatePill() {
-  const p = $("#drvPill"); if (!p) return;
-  const ok = !!S.user && isDriver(); p.classList.toggle("hide", !ok);
-  if (ok) { const n = openList().length; $("#drvCnt").textContent = n; $("#drvCnt").classList.toggle("hide", !n); }
-}
-function syncDriverFeed() { if (S.user && isDriver()) startDriverFeed(); else stopDriverFeed(); }
-function stopDriverFeed() {
-  drvUns.forEach(u => { try { u(); } catch (e) { } }); drvUns = [];
-  Object.values(drvPriv).forEach(u => { try { u(); } catch (e) { } }); drvPriv = {};
-  S.dOpen = {}; S.dMine = {}; S.dPriv = {}; S.drvOn = false; S.dErr = false;
-}
-function watchPrivDriver(id, tries = 0) {
-  return onValue(ref(db, `order_private/${id}`), ps => {
-    const v = ps.val(); S.dPriv[id] = v;
-    notifyChat(id, chatArr(v), "driver"); renderDriverPanel();
-  }, () => {
-    delete drvPriv[id];
-    if (tries < 6) setTimeout(() => { if (S.dMine[id] && !drvPriv[id]) drvPriv[id] = watchPrivDriver(id, tries + 1); }, 1500);
-  });
-}
-function startDriverFeed() {
-  if (S.drvOn) return; S.drvOn = true; S.dErr = false;
-  const uid = S.user.uid; let first = true;
-  drvUns.push(onValue(query(ref(db, "live_orders"), orderByChild("status"), equalTo("open")), s => {
-    const v = s.val() || {}, next = {};
-    Object.entries(v).forEach(([id, o]) => { if (o.uid !== uid) next[id] = o; });
-    if (!first) Object.keys(next).forEach(id => {
-      if (!S.dOpen[id]) { toast("Yeni sifariş: " + ((next[id].from && next[id].from.text) || "")); try { navigator.vibrate && navigator.vibrate(200); } catch (e) { } }
+/* --- Elan əlavə et / redaktə --- */
+SUB.add = {
+  title: a => a && a.id ? "Elanı redaktə et" : "Yeni elan",
+  render: a => {
+    const l = a.id ? getL(a.id) : null, p = S.profile;
+    return `<form id="af" class="form"><div><div class="sec" style="margin:0 0 8px">Şəkillər (ən çox 4)</div><div class="photos" id="ph"></div><input id="pf" type="file" accept="image/*" multiple hidden></div>
+    <div><div class="sec" style="margin:0 0 8px">Kateqoriya</div><div class="chips" id="ac">${CATS.map(c => `<button type="button" data-k="${c.k}" class="${l && l.category === c.k ? "on" : ""}">${esc(c.n)}</button>`).join("")}</div></div>
+    <label>Başlıq<input id="at" maxlength="80" required placeholder="Məs: Dağ velosipedi 26&quot;" value="${esc(l ? l.title : "")}"></label>
+    <label>Qiymət (₼)<input id="ap" type="number" inputmode="decimal" min="0" step="0.01" required value="${l ? l.price : ""}"></label>
+    <div><div class="sec" style="margin:0 0 8px">Vəziyyət</div><div class="chips" id="ad"><button type="button" data-k="new" class="${l && l.cond === "new" ? "on" : ""}">Yeni</button><button type="button" data-k="used" class="${!l || l.cond === "used" ? "on" : ""}">İşlənmiş</button></div></div>
+    <label>Şəhər<select id="aci">${CITIES.map(c => `<option ${(l ? l.city : (S.city || p.city || "Xocavar İçi")) === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+    <label>Təsvir<textarea id="ads" maxlength="2000" placeholder="Məhsul haqqında ətraflı məlumat yazın…">${esc(l ? l.desc || "" : "")}</textarea></label>
+    <label class="chk"><input type="checkbox" id="asp" ${!l || l.phone ? "checked" : ""}> Telefon nömrəmi elanda göstər</label>
+    <p class="err" id="ae"></p><button class="btn" id="ab">${a.id ? "Yadda saxla" : "Elanı yerləşdir"}</button></form>`;
+  },
+  mount: a => {
+    const old = a.id ? getL(a.id) : null; let P = [], changed = false, cat = old ? old.category : "", cond = old ? old.cond : "used", loading = false;
+    const draw = () => {
+      $("#ph").innerHTML = P.map((p, i) => `<div class="slot ${i === 0 ? "first" : ""}"><img src="${p}" alt=""><button type="button" class="rm" data-i="${i}" aria-label="Sil">${ic("x")}</button></div>`).join("") + (P.length < 4 ? `<label class="slot" for="pf">${ic("camera")}<span>Əlavə et</span></label>` : "");
+    };
+    if (old) { const c = S.photos[a.id]; if (c) P = c.slice(); else { loading = true; get(ref(db, `listing_photos/${a.id}`)).then(s => { if (!changed) P = Object.values(s.val() || {}); }).catch(() => { }).finally(() => { loading = false; draw(); }); } }
+    draw();
+    $("#ph").addEventListener("click", e => { const r = e.target.closest(".rm"); if (!r) return; P.splice(+r.dataset.i, 1); changed = true; draw(); });
+    $("#pf").addEventListener("change", async e => {
+      const files = [...e.target.files].slice(0, 4 - P.length); e.target.value = "";
+      for (const f of files) { try { P.push(await shrink(await readFile(f), 900, 0.72)); changed = true; } catch (x) { toast("Şəkil oxunmadı."); } }
+      draw();
     });
-    first = false; S.dErr = false; S.dOpen = next; updatePill(); renderDriverPanel(); renderProfile();
-  }, e => { console.warn(e); S.dErr = true; renderDriverPanel(); }));
-  drvUns.push(onValue(query(ref(db, "live_orders"), orderByChild("driverId"), equalTo(uid)), s => {
-    const v = s.val() || {}; S.dMine = {};
-    Object.entries(v).forEach(([id, o]) => { if (o.status === "accepted") S.dMine[id] = o; });
-    Object.keys(S.dMine).forEach(id => { if (!drvPriv[id]) drvPriv[id] = watchPrivDriver(id); });
-    Object.keys(drvPriv).forEach(id => { if (!S.dMine[id]) { try { drvPriv[id](); } catch (e) { } delete drvPriv[id]; delete S.dPriv[id]; } });
-    renderDriverPanel();
-  }, e => console.warn(e)));
-}
-async function acceptOrder(oid) {
-  if (!isDriver()) return;
-  if (Object.keys(S.dMine).length) { toast("Əvvəlcə cari sifarişi tamamlayın."); return; }
-  const a = S.app, uid = S.user.uid, nm = a.fullName || S.profile.name || "Sürücü", ph = a.phone || S.profile.phone || "";
-  try {
-    const res = await runTransaction(ref(db, `live_orders/${oid}`), cur => {
-      if (!cur) return cur;
-      if (cur.status !== "open") return;
-      cur.status = "accepted"; cur.driverId = uid; cur.driverName = nm;
-      cur.car = `${a.make} ${a.model}, ${a.color}, ${a.plate}`; cur.acceptedAt = Date.now();
-      return cur;
+    $("#ac").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; cat = b.dataset.k; $$("#ac button").forEach(x => x.classList.toggle("on", x === b)); });
+    $("#ad").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; cond = b.dataset.k; $$("#ad button").forEach(x => x.classList.toggle("on", x === b)); });
+    $("#af").addEventListener("submit", async e => {
+      e.preventDefault(); const err = $("#ae"), btn = $("#ab"); err.textContent = "";
+      const title = $("#at").value.trim(), price = parseFloat(String($("#ap").value).replace(",", ".")), desc = $("#ads").value.trim(), city = $("#aci").value;
+      if (!cat) { err.textContent = "Kateqoriya seçin."; return; }
+      if (title.length < 3) { err.textContent = "Başlıq ən azı 3 simvol olmalıdır."; return; }
+      if (!isFinite(price) || price < 0) { err.textContent = "Qiyməti düzgün yazın."; return; }
+      if (loading) { err.textContent = "Şəkillər yüklənir, bir az gözləyin."; return; }
+      if (!P.length) { err.textContent = "Ən azı 1 şəkil əlavə edin."; return; }
+      btn.disabled = true;
+      try {
+        const uid = S.user.uid, name = S.profile.name || S.user.displayName || "İstifadəçi", phone = $("#asp").checked ? (S.profile.phone || "") : "";
+        const id = old ? a.id : push(ref(db, "listings")).key, upd = {};
+        const fields = { title, desc, price, category: cat, cond, city, phone, sellerName: name };
+        if (old) { Object.entries(fields).forEach(([k, v]) => { upd[`listings/${id}/${k}`] = v; }); }
+        else upd[`listings/${id}`] = Object.assign({ uid, status: "active", createdAt: serverTimestamp() }, fields);
+        if (!old || changed) {
+          const thumb = await shrink(P[0], 420, 0.72), ph = {}; P.forEach((p, i) => { ph[i] = p; });
+          upd[`listing_photos/${id}`] = ph;
+          if (old) upd[`listings/${id}/thumb`] = thumb; else upd[`listings/${id}`].thumb = thumb;
+          if (old) S.photos[id] = P.slice();
+        }
+        await update(ref(db), upd);
+        if (!old) S.photos[id] = P.slice();
+        toast(old ? "Elan yeniləndi." : "Elanınız yerləşdirildi.");
+        replaceSub("listing", { id });
+      } catch (er) { btn.disabled = false; err.textContent = dbMsg(er); }
     });
-    if (!res.committed) { toast("Bu sifariş artıq götürülüb və ya ləğv edilib."); return; }
-    await update(ref(db, `order_private/${oid}`), { driverId: uid, driverName: nm, driverPhone: ph });
-    toast("Sifarişi qəbul etdiniz.");
-  } catch (e) { toast(dbMsg(e)); }
-}
-function routeHtml(o) {
-  return `<div class="route"><div><i></i><span>${esc(o.from && o.from.text)}</span></div><div><i class="t"></i><span>${esc(o.to && o.to.text)}</span></div></div>`;
-}
-function jobCard(id, o) {
-  const pv = S.dPriv[id] || {}, nm = pv.customerName || o.name || "Müştəri";
-  return `<div class="card"><div class="row"><b>${esc(nm)}</b><span class="st">Qəbul edilib</span></div>${routeHtml(o)}
-  <div class="row"><span class="meta">${o.km || 0} km · ${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")}</span><span class="price">${money(o.price)}</span></div>
-  <div class="acts" style="margin-top:12px">${pv.customerPhone ? callBtn(pv.customerPhone, "Müştərini ara") : '<span class="meta">Nömrə yüklənir…</span>'}<button class="callbtn alt" data-act="chat" data-oid="${esc(id)}" data-role="driver">${ic("chat")} Mesaj${S.unread[id] ? '<i class="dotb"></i>' : ""}</button></div>
-  <div class="acts" style="margin-top:8px"><a class="callbtn alt" target="_blank" rel="noopener" href="${esc(navUrl(o.from))}">${ic("nav")} Götürmə yeri</a><a class="callbtn alt" target="_blank" rel="noopener" href="${esc(navUrl(o.to))}">${ic("nav")} Təyinat</a></div>
-  <div class="acts" style="margin-top:10px"><button class="btn sm" data-act="finish" data-oid="${esc(id)}">Tamamla</button><button class="btn sm red" data-act="release" data-oid="${esc(id)}">İmtina et</button></div></div>`;
-}
-function openCard(id, o) {
-  const near = S.pos && S.pos.src === "gps" && o.from ? ` · sizdən ${distKm(S.pos, o.from).toFixed(1)} km` : "";
-  return `<div class="card"><div class="row"><b>${esc(o.name || "Müştəri")}</b><span class="meta">${ago(o.createdAt)}</span></div>${routeHtml(o)}
-  <div class="row"><span class="meta">${o.km || 0} km · ${esc((CLASSES[o.cls] || {}).n || "")} · ${esc(PAYS[o.pay] || "")}${near}</span><span class="price">${money(o.price)}</span></div>
-  <button class="btn" style="font-size:17px;padding:12px;margin-top:12px" data-act="accept" data-oid="${esc(id)}">Qəbul et</button></div>`;
-}
-function renderDriverPanel() {
-  const el = $("#dpBody"); if (!el) return;
-  if (!isDriver()) { el.innerHTML = '<div class="info wait">Şoför paneli yalnız təsdiqlənmiş sürücülər üçündür.</div>'; return; }
-  const mine = Object.entries(S.dMine), open = openList();
-  el.innerHTML = (S.dErr ? '<div class="info bad">Sifarişlər yüklənmədi. İnterneti yoxlayın və ya bir az sonra yenidən cəhd edin.</div>' : "") +
-    (mine.length ? `<div class="sec">Qəbul etdiyim sifariş</div>${mine.map(([id, o]) => jobCard(id, o)).join("")}` : "") +
-    `<div class="sec">Aktiv sifarişlər${open.length ? " (" + open.length + ")" : ""}</div>` +
-    (open.length ? open.map(([id, o]) => openCard(id, o)).join("") : '<div class="empty" style="padding:24px 6px"><p style="font-size:16px;margin:0 auto">Hazırda aktiv sifariş yoxdur. Yeni sifariş gələndə burada görünəcək.</p></div>') +
-    `<button class="btn ghost" style="margin-top:6px" data-act="sub" data-n="driver">Ərizə məlumatlarım</button>`;
-}
-function driverPanelMount() {
-  renderDriverPanel();
-  const t = setInterval(() => { renderDriverPanel(); updatePill(); }, 30000);
-  S.subUn = () => clearInterval(t);
-}
+  }
+};
 
-/* ---------- Dəstək və sifariş söhbəti ---------- */
-function msgHtml(arr, mine) {
-  return arr.map(m => `<div class="msg ${m.from === mine ? "u" : "a"}">${esc(m.text)}<small>${fmtT(m.ts)}</small></div>`).join("");
-}
-function supportMount(prefill) {
-  const uid = S.user.uid, chat = $("#chat"), form = $("#cf"), input = $("#ci");
-  if (typeof prefill === "string") input.value = prefill;
-  const hello = '<div class="msg a">Salam! Sualınızı yazın, dəstək komandamız tezliklə cavab verəcək.</div>';
-  chat.innerHTML = hello;
-  S.subUn = onValue(query(ref(db, `support/${uid}/messages`), limitToLast(200)), snap => {
-    const arr = []; snap.forEach(c => { arr.push(c.val()); });
-    chat.innerHTML = hello + msgHtml(arr, "user");
-    chat.scrollTop = chat.scrollHeight;
-  }, () => toast("Söhbət yüklənmədi."));
-  form.addEventListener("submit", async e => {
-    e.preventDefault(); const text = input.value.trim(); if (!text) return; input.value = "";
-    try {
-      await push(ref(db, `support/${uid}/messages`), { from: "user", text, ts: serverTimestamp() });
-      await update(ref(db, `support/${uid}/meta`), { name: S.profile.name || S.user.displayName || "", email: S.user.email, phone: S.profile.phone || "", last: text.slice(0, 120), ts: serverTimestamp(), unreadAdmin: true });
-    } catch (er) { toast(dbMsg(er)); input.value = text; }
-  });
-}
-function ochatMount(c) {
-  S.chatCtx = c;
-  const chat = $("#chat"), form = $("#cf"), input = $("#ci");
-  chat.innerHTML = '<div class="msg a">Burada sürücü / müştəri ilə yazışa bilərsiniz.</div>';
-  S.subUn = onValue(query(ref(db, `order_private/${c.oid}/chat`), limitToLast(200)), snap => {
-    const arr = []; snap.forEach(x => { arr.push(x.val()); });
-    S.seen[c.oid] = arr.length;
-    chat.innerHTML = '<div class="msg a">Burada sürücü / müştəri ilə yazışa bilərsiniz.</div>' + msgHtml(arr, c.role);
-    chat.scrollTop = chat.scrollHeight;
-  }, () => toast("Söhbət yüklənmədi."));
-  form.addEventListener("submit", async e => {
-    e.preventDefault(); const text = input.value.trim(); if (!text) return; input.value = "";
-    try { await push(ref(db, `order_private/${c.oid}/chat`), { from: c.role, uid: S.user.uid, text, ts: serverTimestamp() }); }
-    catch (er) { toast(dbMsg(er)); input.value = text; }
-  });
-}
+/* --- Mesajlar --- */
+SUB.chats = {
+  title: "Mesajlar", live: true,
+  render: () => {
+    const l = chatList();
+    return l.length ? l.map(([cid, c]) => `<button class="conv" data-act="openchat" data-cid="${esc(cid)}"><div class="ava">${esc(initials(c.other))}</div><div><b>${esc(c.other || "İstifadəçi")}</b><small>${esc(c.title || "")}</small><small style="color:#334155">${c.lastFrom === (S.user && S.user.uid) ? "Siz: " : ""}${esc(c.last || "")}</small></div><div class="t">${ago(c.ts)}${c.unread > 0 ? `<br><span class="unr">${c.unread}</span>` : ""}</div></button>`).join("") : emptyBox("chat", "Mesaj yoxdur", "Elan səhifəsində «Mesaj yaz» düyməsi ilə satıcıya yaza bilərsiniz.");
+  }
+};
+A.openchat = b => openSub("chat", { cid: b.dataset.cid });
+SUB.chat = {
+  title: a => chatCtx(a).other, flush: true,
+  render: a => {
+    const c = chatCtx(a);
+    return `<div class="lhead" data-act="open" data-id="${esc(c.listingId)}">${c.thumb ? `<img src="${c.thumb}" alt="">` : `<span class="ph">${ic("bike")}</span>`}<div><b>${esc(c.title || "Elan")}</b><small>Elana bax</small></div></div>
+    <div class="chat" id="chat"><div class="msg a">Satıcı ilə yazışmağa başlayın. Şəxsi məlumatlarınızı və ödəniş detallarını diqqətlə paylaşın.</div></div>
+    <form id="cf" class="cform"><input id="ci" maxlength="1000" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`;
+  },
+  mount: a => {
+    const ctx0 = chatCtx(a), cid = a.cid, uid = S.user.uid, chat = $("#chat"); let off = null, attached = false;
+    S.openChat = cid;
+    const attach = () => {
+      if (attached || !S.chats[cid]) return; attached = true;
+      off = onValue(query(ref(db, `chats/${cid}/messages`), limitToLast(200)), snap => {
+        const arr = []; snap.forEach(c => { arr.push(c.val()); });
+        chat.innerHTML = '<div class="msg a">Satıcı ilə yazışmağa başlayın. Şəxsi məlumatlarınızı və ödəniş detallarını diqqətlə paylaşın.</div>' + msgsHtml(arr, uid);
+        chat.scrollTop = chat.scrollHeight; markRead(cid);
+      }, () => { attached = false; toast("Söhbət yüklənmədi."); });
+    };
+    S.chatAttach = attach; attach();
+    S.subUn = () => { if (off) off(); S.chatAttach = null; S.openChat = null; };
+    $("#cf").addEventListener("submit", async e => {
+      e.preventDefault(); const inp = $("#ci"), text = inp.value.trim(); if (!text) return; inp.value = "";
+      try { await sendChat(chatCtx(a), text); } catch (er) { toast(dbMsg(er)); inp.value = text; }
+    });
+  }
+};
 
-/* ---------- PWA ---------- */
+/* --- Bildirişlər --- */
+SUB.notif = {
+  title: "Bildirişlər", live: true,
+  render: () => {
+    const seen = SUB.notif.seen || (SUB.notif.seen = lsGet("xi_ann_seen")), n = unreadTotal();
+    const l = Object.entries(S.anns).filter(([, a]) => annActive(a)).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    const perm = "Notification" in window ? Notification.permission : "denied";
+    return `${n ? `<button class="conv" data-act="chats"><span class="coin" style="background:var(--g)">${ic("chat")}</span><div><b>Oxunmamış mesajlar</b><small>${n} yeni mesaj</small></div>${ic("chev", "sm")}</button>` : ""}
+    ${perm !== "granted" && "Notification" in window ? `<div class="info">Yeni mesajları dərhal bilmək üçün brauzer bildirişlərini aktiv edin.<br><br><button class="btn sm" data-act="askPerm">Bildirişləri aktiv et</button></div>` : ""}
+    ${l.length ? l.map(([id, a]) => `<div class="nt ${esc(a.kind || "info")} ${seen.includes(id) ? "" : "new"}"><b>${esc(a.title)}</b><p>${esc(a.body)}</p><small>${ago(a.createdAt)}</small></div>`).join("") : emptyBox("bell", "Bildiriş yoxdur", "Yeniliklər və elanlar burada görünəcək.")}`;
+  },
+  mount: () => { const ids = Object.keys(S.anns); lsSet("xi_ann_seen", ids); refreshBell(); }
+};
+
+/* --- AV pulu --- */
+SUB.wallet = {
+  title: "AV pulu", live: true,
+  render: () => {
+    const tx = Object.values(S.tx).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
+    return `<div class="avcard" style="margin:0"><span class="coin">${ic("coin")}</span><div><small>AV balansı</small><b>${Number(S.wallet.balance || 0).toFixed(2)} AV</b></div></div>
+    <form id="fp" class="form"><label>Promokod<input id="pc" placeholder="Kodu daxil edin" autocapitalize="characters" autocomplete="off" required></label><p class="err" id="pe"></p><button class="btn" id="pb">${ic("plus")} Balansı yüklə</button></form>
+    <div class="info"><b>AV nədir?</b><br>AV — Xocavar İçi daxilindəki ayrıca pul balansıdır. Promokod və ya inzibatçı tərəfindən yüklənir. Elanı <b>${S.cfg.boostDays} gün</b> önə çıxarmaq üçün <b>${fmtAV(S.cfg.boostCost)}</b> xərclənir.</div>
+    <div class="sec">Son əməliyyatlar</div>${tx.length ? tx.map(txRow).join("") : '<p class="meta">Hələ əməliyyat yoxdur.</p>'}`;
+  },
+  mount: () => { const f = $("#fp"); if (f) f.addEventListener("submit", redeemPromo); }
+};
+
+/* --- Profil redaktə / ayarlar / təhlükəsizlik / haqqında --- */
+SUB.edit = {
+  title: "Profili redaktə et", live: false,
+  render: () => `<form id="fe" class="form"><label>Ad Soyad<input id="en" required value="${esc(S.profile.name || "")}"></label><label>Telefon<input id="ep" type="tel" required value="${esc(S.profile.phone || "")}"></label>
+  <label>Şəhər<select id="ec">${CITIES.map(c => `<option ${(S.profile.city || "Xocavar İçi") === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>E-poçt<input value="${esc(S.user.email)}" disabled></label><button class="btn">Yadda saxla</button></form>`,
+  mount: () => $("#fe").addEventListener("submit", async e => {
+    e.preventDefault(); const name = $("#en").value.trim(), phone = $("#ep").value.trim();
+    if (name.length < 3 || phone.replace(/\D/g, "").length < 9) { toast("Ad və telefonu düzgün yazın."); return; }
+    try { await update(ref(db, `users/${S.user.uid}`), { name, phone, city: $("#ec").value }); try { await updateProfile(auth.currentUser, { displayName: name }); } catch (x) { } toast("Profil yeniləndi."); backSub(); } catch (er) { toast(dbMsg(er)); }
+  })
+};
+SUB.settings = {
+  title: "Ayarlar", live: true,
+  render: () => {
+    const on = !(S.profile.settings && S.profile.settings.notify === false), perm = "Notification" in window ? Notification.permission : "yoxdur";
+    return `<div class="menu" style="margin:0"><button class="setrow" data-act="sub" data-n="edit">${ic("user")}<span>Profili redaktə et</span>${ic("chev", "sm")}</button>
+    <button class="setrow" data-act="toggleNotify">${ic("bell")}<span>Mesaj bildirişləri</span><i class="sw ${on ? "on" : ""}"></i></button>
+    <button class="setrow" data-act="askPerm">${ic("phone")}<span>Brauzer bildirişləri<br><small class="meta">${perm === "granted" ? "Aktivdir" : perm === "denied" ? "Bloklanıb (brauzer ayarlarından açın)" : "Aktiv etmək üçün toxunun"}</small></span>${ic("chev", "sm")}</button>
+    <button class="setrow" data-act="sub" data-n="security">${ic("shield")}<span>Təhlükəsizlik</span>${ic("chev", "sm")}</button>
+    <button class="setrow" data-act="sub" data-n="about">${ic("info")}<span>Tətbiq haqqında</span>${ic("chev", "sm")}</button>
+    <button class="setrow" data-act="logout">${ic("logout")}<span>Hesabdan çıxış</span>${ic("chev", "sm")}</button></div>`;
+  }
+};
+SUB.security = {
+  title: "Təhlükəsizlik",
+  render: () => `<div class="info">Hesab e-poçtu: <b>${esc(S.user.email)}</b></div><button class="btn ghost" data-act="resetPass">${ic("shield")} Şifrəni dəyiş (e-poçtla link)</button>
+  <div class="info">Şifrənizi heç kimlə bölüşməyin. Alıcı ilə görüşərkən ictimai yeri seçin və məhsulu yoxlamadan ödəniş etməyin.</div><button class="btn red" data-act="logout">${ic("logout")} Hesabdan çıx</button>`
+};
+SUB.about = {
+  title: "Tətbiq haqqında", live: true,
+  render: () => `<div style="text-align:center;padding:10px"><svg class="lg" style="width:80px;height:70px"><use href="#i-logo"/></svg><h2 style="margin:8px 0 2px">Xocavar İçi</h2><p class="meta">Versiya 3.0.0 · Alver</p></div>
+  <div class="info">Xocavar İçi — velosiped və aksesuarların alqı-satqısı üçün yerli elan platformasıdır. Elan yerləşdirin, satıcı ilə birbaşa yazışın və AV pulu ilə elanlarınızı önə çıxarın.</div>
+  ${installEv ? `<button class="btn" data-act="install">Ana ekrana əlavə et</button>` : '<div class="info">Brauzer menyusundan «Ana ekrana əlavə et» seçərək tətbiqi quraşdıra bilərsiniz.</div>'}
+  <button class="btn ghost" data-act="sub" data-n="support">${ic("headset")} Dəstəyə yaz</button>`
+};
+
+/* --- Dəstək (admin ilə canlı söhbət) --- */
+SUB.support = {
+  title: "24/7 Dəstək", flush: true,
+  render: () => `<div class="chat" id="chat"></div><form id="cf" class="cform"><input id="ci" maxlength="1000" placeholder="Mesajınızı yazın…" autocomplete="off"><button class="send" aria-label="Göndər">${ic("send")}</button></form>`,
+  mount: prefill => {
+    const uid = S.user.uid, chat = $("#chat"), input = $("#ci"), hello = '<div class="msg a">Salam! Sualınızı yazın, dəstək komandamız tezliklə cavab verəcək.</div>';
+    if (typeof prefill === "string") input.value = prefill;
+    chat.innerHTML = hello;
+    const off = onValue(query(ref(db, `support/${uid}/messages`), limitToLast(200)), snap => {
+      const arr = []; snap.forEach(c => { arr.push(c.val()); });
+      const prevN = SUB.support.n; SUB.support.n = arr.length;
+      if (prevN !== undefined && arr.length > prevN && arr[arr.length - 1].from === "admin") { try { navigator.vibrate && navigator.vibrate(120); } catch (e) { } }
+      chat.innerHTML = hello + arr.map(m => `<div class="msg ${m.from === "admin" ? "a" : "u"}">${esc(m.text)}<small>${fmtT(m.ts)}</small></div>`).join("");
+      chat.scrollTop = chat.scrollHeight;
+    }, () => toast("Söhbət yüklənmədi."));
+    S.subUn = off;
+    $("#cf").addEventListener("submit", async e => {
+      e.preventDefault(); const text = input.value.trim(); if (!text) return; input.value = "";
+      try {
+        await push(ref(db, `support/${uid}/messages`), { from: "user", text, ts: serverTimestamp() });
+        await update(ref(db, `support/${uid}/meta`), { name: S.profile.name || S.user.displayName || "", email: S.user.email, phone: S.profile.phone || "", last: text.slice(0, 120), ts: serverTimestamp(), unreadAdmin: true });
+      } catch (er) { toast(dbMsg(er)); input.value = text; }
+    });
+  }
+};
+
+/* ================= PWA ================= */
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => { }));

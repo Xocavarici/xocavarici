@@ -4,19 +4,10 @@
       "$uid": { ".read": "auth.uid === $uid", ".write": false }
     },
     "users": {
-      "$uid": {
-        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
-        ".write": "auth.uid === $uid"
-      }
-    },
-    "driver_applications": {
       ".read": "root.child('admins/'+auth.uid).val() === true",
       "$uid": {
         ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
-        ".write": "(auth.uid === $uid && !data.exists()) || root.child('admins/'+auth.uid).val() === true",
-        "status": {
-          ".validate": "newData.val() === 'pending' || root.child('admins/'+auth.uid).val() === true"
-        }
+        ".write": "auth.uid === $uid"
       }
     },
     "support": {
@@ -26,25 +17,96 @@
         ".write": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true"
       }
     },
-    "orders": {
+    "config": {
+      ".read": "auth != null",
+      ".write": "root.child('admins/'+auth.uid).val() === true"
+    },
+    "announcements": {
+      ".read": true,
+      ".write": "root.child('admins/'+auth.uid).val() === true"
+    },
+    "listings": {
+      ".indexOn": ["uid"],
+      ".read": "auth != null",
+      "$id": {
+        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.child('uid').val() === auth.uid && (!newData.exists() || newData.child('uid').val() === auth.uid)) || root.child('admins/'+auth.uid).val() === true)",
+        ".validate": "newData.hasChildren(['uid','title','price','category','createdAt'])",
+        "title": { ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 80" },
+        "desc": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+        "price": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+        "status": { ".validate": "newData.val() === 'active' || newData.val() === 'sold' || newData.val() === 'hidden'" },
+        "thumb": { ".validate": "newData.isString() && newData.val().length < 120000" },
+        "blocked": { ".validate": "newData.val() === data.val() || root.child('admins/'+auth.uid).val() === true" },
+        "boostedUntil": {
+          ".validate": "newData.val() === data.val() || root.child('admins/'+auth.uid).val() === true || (data.parent().child('uid').val() === auth.uid && newData.isNumber() && newData.val() <= now + (root.child('config/boostDays').exists() ? root.child('config/boostDays').val() : 3) * 86400000 + 300000 && newData.parent().parent().parent().child('wallets/'+auth.uid+'/balance').val() <= root.child('wallets/'+auth.uid+'/balance').val() - (root.child('config/boostCost').exists() ? root.child('config/boostCost').val() : 3) + 0.005)"
+        }
+      }
+    },
+    "listing_photos": {
+      "$id": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('listings/'+$id+'/uid').val() === auth.uid || newData.parent().parent().child('listings/'+$id+'/uid').val() === auth.uid || root.child('admins/'+auth.uid).val() === true)",
+        "$i": { ".validate": "newData.isString() && newData.val().length < 400000" }
+      }
+    },
+    "chats": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$cid": {
+        ".read": "data.child('meta/buyerId').val() === auth.uid || data.child('meta/sellerId').val() === auth.uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth != null && ((!data.exists() && newData.child('meta/buyerId').val() === auth.uid) || data.child('meta/buyerId').val() === auth.uid || data.child('meta/sellerId').val() === auth.uid)",
+        "meta": {
+          ".validate": "newData.hasChildren(['listingId','buyerId','sellerId']) && newData.child('sellerId').val() === root.child('listings/'+newData.child('listingId').val()+'/uid').val() && newData.child('buyerId').val() !== newData.child('sellerId').val()"
+        },
+        "messages": {
+          "$mid": { ".validate": "newData.hasChildren(['from','text','ts']) && newData.child('from').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 1000" }
+        }
+      }
+    },
+    "user_chats": {
       "$uid": {
         ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
-        ".write": "auth.uid === $uid"
+        "$cid": {
+          ".write": "auth.uid === $uid || ((newData.parent().parent().parent().child('chats/'+$cid+'/meta/buyerId').val() === auth.uid || newData.parent().parent().parent().child('chats/'+$cid+'/meta/sellerId').val() === auth.uid) && ($uid === newData.parent().parent().parent().child('chats/'+$cid+'/meta/buyerId').val() || $uid === newData.parent().parent().parent().child('chats/'+$cid+'/meta/sellerId').val()))"
+        }
       }
     },
-    "live_orders": {
-      ".indexOn": ["status", "driverId"],
-      ".read": "root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' || root.child('admins/'+auth.uid).val() === true",
-      "$id": {
-        ".read": "data.child('uid').val() === auth.uid",
-        ".write": "auth.uid != null && ((!data.exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'open') || (data.child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid) || (root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' && (data.child('status').val() === 'open' || data.child('driverId').val() === auth.uid) && newData.child('uid').val() === data.child('uid').val()) || root.child('admins/'+auth.uid).val() === true)"
+    "wallets": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        "balance": {
+          ".write": "root.child('admins/'+auth.uid).val() === true || (auth.uid === $uid && ((data.exists() && newData.val() >= 0 && newData.val() < data.val()) || (newData.parent().child('lastPromo').val() != null && root.child('promo_codes/'+newData.parent().child('lastPromo').val()+'/active').val() === true && !root.child('promo_redeem/'+newData.parent().child('lastPromo').val()+'/'+$uid).exists() && newData.parent().parent().parent().child('promo_redeem/'+newData.parent().child('lastPromo').val()+'/'+$uid).val() === true && newData.val() >= (data.exists() ? data.val() : 0) + root.child('promo_codes/'+newData.parent().child('lastPromo').val()+'/amount').val() - 0.005 && newData.val() <= (data.exists() ? data.val() : 0) + root.child('promo_codes/'+newData.parent().child('lastPromo').val()+'/amount').val() + 0.005)))",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "lastPromo": {
+          ".write": "auth.uid === $uid",
+          ".validate": "newData.isString()"
+        }
       }
     },
-    "order_private": {
-      "$id": {
-        ".read": "data.child('uid').val() === auth.uid || data.child('driverId').val() === auth.uid || root.child('admins/'+auth.uid).val() === true",
-        ".write": "auth.uid != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || data.child('uid').val() === auth.uid || data.child('driverId').val() === auth.uid || (root.child('driver_applications/'+auth.uid+'/status').val() === 'approved' && root.child('live_orders/'+$id+'/driverId').val() === auth.uid) || root.child('admins/'+auth.uid).val() === true)",
-        "uid": { ".validate": "!data.exists() || newData.val() === data.val()" }
+    "promo_codes": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$code": {
+        ".read": "auth != null",
+        ".write": "root.child('admins/'+auth.uid).val() === true",
+        "used": {
+          ".write": "auth != null && data.parent().child('active').val() === true && newData.val() === data.val() + 1 && newData.val() <= data.parent().child('maxUses').val()"
+        }
+      }
+    },
+    "promo_redeem": {
+      ".read": "root.child('admins/'+auth.uid).val() === true",
+      "$code": {
+        "$uid": {
+          ".read": "auth.uid === $uid",
+          ".write": "auth.uid === $uid && !data.exists() && newData.val() === true && root.child('promo_codes/'+$code+'/active').val() === true && newData.parent().parent().parent().child('promo_codes/'+$code+'/used').val() === root.child('promo_codes/'+$code+'/used').val() + 1"
+        }
+      }
+    },
+    "av_tx": {
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true",
+        ".write": "auth.uid === $uid || root.child('admins/'+auth.uid).val() === true"
       }
     }
   }
