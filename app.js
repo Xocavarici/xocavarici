@@ -55,7 +55,7 @@ const CATS = [
   { k: "light", n: "İşıq Sistemi", i: "lamp" }, { k: "lock", n: "Kilid və Aksesuar", i: "lock" }, { k: "other", n: "Digər", i: "dots" }
 ];
 const catName = k => (CATS.find(c => c.k === k) || { n: "Digər" }).n;
-const CITIES = ["Xocavar İçi", "Masallı", "Lənkəran", "Bakı", "Sumqayıt", "Xırdalan", "Gəncə", "Mingəçevir", "Şəki", "Naxçıvan", "Digər"];
+const CITIES = ["Alvero", "Masallı", "Lənkəran", "Bakı", "Sumqayıt", "Xırdalan", "Gəncə", "Mingəçevir", "Şəki", "Naxçıvan", "Digər"];
 const COND = { new: "Yeni", used: "İşlənmiş" };
 
 /* ================= Vəziyyət ================= */
@@ -203,14 +203,14 @@ const emptyBox = (icon, h, p, btn = "") => `<div class="empty">${ic(icon)}<h3>${
 /* ================= Ana səhifə ================= */
 function buildHome() {
   const el = $("#v-home");
-  el.innerHTML = `<header class="top"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span><em>Daha yaxın, daha rahat!</em></div></div>
+  el.innerHTML = `<header class="top"><div class="logo"><img class="lg" src="logo-mark.png" alt="Alvero"><div><span>Alvero</span><em>Daha yaxın, daha rahat!</em></div></div>
     <div class="hicons">
     <button class="circ" data-act="chats" aria-label="Mesajlar">${ic("chat")}<i class="badge hide" id="bChat">0</i></button>
     <button class="circ" data-act="bell" aria-label="Bildirişlər">${ic("bell")}<i class="dotg hide" id="bBell"></i></button></div></header>
     <form class="search" id="hs"><div class="sbox">${ic("search")}<input id="hq" placeholder="Velosiped axtar…" enterkeyhint="search" autocomplete="off"></div><button type="button" class="fbtn" data-act="filters" aria-label="Filtr">${ic("filter")}</button></form>
     <div class="scroll" id="hscroll">
       <div class="hero" id="hero">
-        <div class="slide s1"><h3>Xocavar İçi</h3><p>Daha yaxın, daha rahat!</p><button class="go" data-act="browse">Elanlara bax</button><svg class="bk" viewBox="0 0 64 40"><use href="#i-bike"/></svg></div>
+        <div class="slide s1"><h3>Alvero</h3><p>Daha yaxın, daha rahat!</p><button class="go" data-act="browse">Elanlara bax</button><svg class="bk" viewBox="0 0 64 40"><use href="#i-bike"/></svg></div>
         <div class="slide s2"><h3>Aksesuarlarda ən yaxşı seçim!</h3><p>Kilid, işıq, tormuz və daha çox</p><button class="go" data-act="cat" data-k="lock">Bax</button><svg class="bk" viewBox="0 0 48 48"><use href="#i-lock"/></svg></div>
         <div class="slide s3"><h3>Elanını pulsuz yerləşdir</h3><p>Bir neçə saniyəyə satışa çıxar</p><button class="go" data-act="add">Elan ver</button><svg class="bk" viewBox="0 0 24 24"><use href="#i-tag"/></svg></div>
       </div><div class="dots" id="dots"><i class="on"></i><i></i><i></i></div>
@@ -241,7 +241,7 @@ function renderMine() {
   const arr = Object.entries(S.mine).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
   const f = { active: arr.filter(([, l]) => l.status === "active" && !l.blocked), sold: arr.filter(([, l]) => l.status === "sold"), hidden: arr.filter(([, l]) => l.status === "hidden" || l.blocked) };
   const list = f[S.mtab] || [];
-  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div></header>
+  el.innerHTML = `<header class="top plain"><div class="logo"><img class="lg" src="logo-mark.png" alt="Alvero"><div><span>Alvero</span></div></div></header>
   <div class="scroll"><h1 class="ptitle">Elanlarım</h1>
   <div class="tabs">${[["active", "Aktiv"], ["sold", "Satılıb"], ["hidden", "Gizli"]].map(([k, n]) => `<button class="${S.mtab === k ? "on" : ""}" data-act="mtab" data-v="${k}">${n} (${f[k].length})</button>`).join("")}</div>
   <div class="list">${list.length ? list.map(([id, l]) => mineItem(id, l)).join("") : emptyBox("tag", "Elan yoxdur", S.mtab === "active" ? "İlk elanınızı yerləşdirin, alıcılar sizinlə birbaşa əlaqə saxlasın." : "Bu bölmədə elan yoxdur.", S.mtab === "active" ? `<button class="btn" data-act="add">${ic("plus")} Elan ver</button>` : "")}</div></div>`;
@@ -271,7 +271,7 @@ function renderHistory() {
     const arr = Object.values(S.tx).sort((a, b) => (b.ts || 0) - (a.ts || 0));
     body = arr.length ? `<div class="list">${arr.map(txRow).join("")}</div>` : emptyBox("coin", "Əməliyyat yoxdur", "AV pulu ilə bağlı əməliyyatlarınız burada görünəcək.");
   }
-  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div></header>
+  el.innerHTML = `<header class="top plain"><div class="logo"><img class="lg" src="logo-mark.png" alt="Alvero"><div><span>Alvero</span></div></div></header>
   <div class="scroll"><h1 class="ptitle">Tarixçə</h1><div class="tabs">${[["viewed", "Baxılanlar"], ["favs", "Sevimlilər"], ["av", "AV əməliyyatları"]].map(([k, n]) => `<button class="${S.htab === k ? "on" : ""}" data-act="htab" data-v="${k}">${n}</button>`).join("")}</div>${body}</div>`;
 }
 const txRow = t => `<div class="tx"><span class="coin" style="background:var(--gl)">${ic("coin")}</span><div><b>${esc(t.note || "Əməliyyat")}</b><small>${fmtT(t.ts)}</small></div><span class="am ${t.amount >= 0 ? "p" : "m"}">${t.amount >= 0 ? "+" : ""}${Number(t.amount).toFixed(2)} AV</span></div>`;
@@ -281,7 +281,7 @@ function renderProfile() {
   const el = $("#v-profile"); if (!el) return;
   const p = S.profile, u = S.user || {}, name = p.name || u.displayName || "İstifadəçi", unread = unreadTotal();
   const row = (icon, label, attrs, extra = "") => `<button class="mrow" ${attrs}>${ic(icon)}<span>${label}</span>${extra}${ic("chev", "sm")}</button>`;
-  el.innerHTML = `<header class="top plain"><div class="logo"><svg class="lg"><use href="#i-logo"/></svg><div><span>Xocavar İçi</span></div></div><button class="circ" data-act="sub" data-n="settings" aria-label="Ayarlar">${ic("gear")}</button></header>
+  el.innerHTML = `<header class="top plain"><div class="logo"><img class="lg" src="logo-mark.png" alt="Alvero"><div><span>Alvero</span></div></div><button class="circ" data-act="sub" data-n="settings" aria-label="Ayarlar">${ic("gear")}</button></header>
   <div class="scroll"><button class="phead" data-act="sub" data-n="edit"><div class="ava">${esc(initials(name))}</div><div class="pinfo"><h2>${esc(name)}</h2><p>${esc(p.phone || u.email || "")}</p><span class="vbadge">${ic("shield")}Təsdiqlənmiş hesab</span></div>${ic("chev", "sm")}</button>
   <div class="avcard"><span class="coin">${ic("coin")}</span><div><small>AV balansı</small><b>${Number(S.wallet.balance || 0).toFixed(2)} AV</b></div><button class="btn" data-act="sub" data-n="wallet">${ic("plus")} Yüklə</button></div>
   <div class="menu">${row("grid", "Elanlarım", 'data-act="tab" data-v="mine"')}${row("heart", "Sevimlilər", 'data-act="favtab"')}${row("chat", "Mesajlarım", 'data-act="chats"', unread ? `<span class="tag">${unread}</span>` : "")}
@@ -298,7 +298,7 @@ function refreshBell() {
 }
 function updateBadges() {
   const n = unreadTotal(), b = $("#bChat"); if (b) { b.textContent = n > 99 ? "99+" : n; b.classList.toggle("hide", !n); }
-  document.title = (n ? `(${n}) ` : "") + "Xocavar İçi — Alver";
+  document.title = (n ? `(${n}) ` : "") + "Alvero";
   refreshBell();
 }
 
@@ -606,7 +606,7 @@ SUB.add = {
     <div><div class="sec" style="margin:0 0 8px">Qiymət növü</div><div class="chips" id="apt"><button type="button" data-k="fixed" class="${pt === "fixed" ? "on" : ""}">Qiymət</button><button type="button" data-k="nego" class="${pt === "nego" ? "on" : ""}">Razılaşma yolu ilə</button><button type="button" data-k="order" class="${pt === "order" ? "on" : ""}">Sifarişlə</button></div></div>
     <label id="apw" class="${pt === "fixed" ? "" : "hide"}">Qiymət (₼)<input id="ap" type="number" inputmode="decimal" min="0" step="0.01" value="${l && pt === "fixed" ? l.price : ""}"></label>
     <div><div class="sec" style="margin:0 0 8px">Vəziyyət</div><div class="chips" id="ad"><button type="button" data-k="new" class="${l && l.cond === "new" ? "on" : ""}">Yeni</button><button type="button" data-k="used" class="${!l || l.cond === "used" ? "on" : ""}">İşlənmiş</button></div></div>
-    <label>Şəhər<select id="aci">${CITIES.map(c => `<option ${(l ? l.city : (S.city || p.city || "Xocavar İçi")) === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+    <label>Şəhər<select id="aci">${CITIES.map(c => `<option ${(l ? l.city : (S.city || p.city || "Alvero")) === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
     <label>Təsvir<textarea id="ads" maxlength="2000" placeholder="Məhsul haqqında ətraflı məlumat yazın…">${esc(l ? l.desc || "" : "")}</textarea></label>
     <label class="chk"><input type="checkbox" id="asp" ${!l || l.phone ? "checked" : ""}> Telefon nömrəmi elanda göstər</label>
     <p class="err" id="ae"></p><button class="btn" id="ab">${a.id ? "Yadda saxla" : "Elanı yerləşdir"}</button></form>`;
@@ -715,7 +715,7 @@ SUB.wallet = {
     const tx = Object.values(S.tx).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
     return `<div class="avcard" style="margin:0"><span class="coin">${ic("coin")}</span><div><small>AV balansı</small><b>${Number(S.wallet.balance || 0).toFixed(2)} AV</b></div></div>
     <form id="fp" class="form"><label>Promokod<input id="pc" placeholder="Kodu daxil edin" autocapitalize="characters" autocomplete="off" required></label><p class="err" id="pe"></p><button class="btn" id="pb">${ic("plus")} Balansı yüklə</button></form>
-    <div class="info"><b>AV nədir?</b><br>AV — Xocavar İçi daxilindəki ayrıca pul balansıdır. Promokod və ya inzibatçı tərəfindən yüklənir. Elanı <b>${S.cfg.boostDays} gün</b> önə çıxarmaq üçün <b>${fmtAV(S.cfg.boostCost)}</b> xərclənir.</div>
+    <div class="info"><b>AV nədir?</b><br>AV — Alvero daxilindəki ayrıca pul balansıdır. Promokod və ya inzibatçı tərəfindən yüklənir. Elanı <b>${S.cfg.boostDays} gün</b> önə çıxarmaq üçün <b>${fmtAV(S.cfg.boostCost)}</b> xərclənir.</div>
     <div class="sec">Son əməliyyatlar</div>${tx.length ? tx.map(txRow).join("") : '<p class="meta">Hələ əməliyyat yoxdur.</p>'}`;
   },
   mount: () => { const f = $("#fp"); if (f) f.addEventListener("submit", redeemPromo); }
@@ -725,7 +725,7 @@ SUB.wallet = {
 SUB.edit = {
   title: "Profili redaktə et", live: false,
   render: () => `<form id="fe" class="form"><label>Ad Soyad<input id="en" required value="${esc(S.profile.name || "")}"></label><label>Telefon<input id="ep" type="tel" required value="${esc(S.profile.phone || "")}"></label>
-  <label>Şəhər<select id="ec">${CITIES.map(c => `<option ${(S.profile.city || "Xocavar İçi") === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>E-poçt<input value="${esc(S.user.email)}" disabled></label><button class="btn">Yadda saxla</button></form>`,
+  <label>Şəhər<select id="ec">${CITIES.map(c => `<option ${(S.profile.city || "Alvero") === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>E-poçt<input value="${esc(S.user.email)}" disabled></label><button class="btn">Yadda saxla</button></form>`,
   mount: () => $("#fe").addEventListener("submit", async e => {
     e.preventDefault(); const name = $("#en").value.trim(), phone = $("#ep").value.trim();
     if (name.length < 3 || phone.replace(/\D/g, "").length < 9) { toast("Ad və telefonu düzgün yazın."); return; }
@@ -751,8 +751,8 @@ SUB.security = {
 };
 SUB.about = {
   title: "Tətbiq haqqında", live: true,
-  render: () => `<div style="text-align:center;padding:10px"><svg class="lg" style="width:80px;height:70px"><use href="#i-logo"/></svg><h2 style="margin:8px 0 2px">Xocavar İçi</h2><p class="meta">Versiya 3.0.0 · Alver</p></div>
-  <div class="info">Xocavar İçi — velosiped və aksesuarların alqı-satqısı üçün yerli elan platformasıdır. Elan yerləşdirin, satıcı ilə birbaşa yazışın və AV pulu ilə elanlarınızı önə çıxarın.</div>
+  render: () => `<div style="text-align:center;padding:10px"><img class="lg" style="width:auto;height:84px" src="logo-mark.png" alt="Alvero"><h2 style="margin:8px 0 2px">Alvero</h2><p class="meta">Versiya 3.0.0 · Alver</p></div>
+  <div class="info">Alvero — velosiped və aksesuarların alqı-satqısı üçün yerli elan platformasıdır. Elan yerləşdirin, satıcı ilə birbaşa yazışın və AV pulu ilə elanlarınızı önə çıxarın.</div>
   ${installEv ? `<button class="btn" data-act="install">Ana ekrana əlavə et</button>` : '<div class="info">Brauzer menyusundan «Ana ekrana əlavə et» seçərək tətbiqi quraşdıra bilərsiniz.</div>'}
   <button class="btn ghost" data-act="sub" data-n="support">${ic("headset")} Dəstəyə yaz</button>`
 };

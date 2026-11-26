@@ -1,7 +1,7 @@
 {
-  "name": "Xocavar İçi — Alver",
-  "short_name": "Xocavar İçi",
-  "description": "Xocavar İçi — velosiped və aksesuar alqı-satqı elanları",
+  "name": "Alvero",
+  "short_name": "Alvero",
+  "description": "Alvero — velosiped və aksesuar alqı-satqı elanları",
   "lang": "az",
   "start_url": "./index.html",
   "scope": "./",

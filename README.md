@@ -1,4 +1,4 @@
-# Xocavar İçi — Alver (v3.0)
+# Alvero (v3.0)
 
 Velosiped və aksesuar alqı-satqı elanları üçün mobil veb tətbiq (PWA). Firebase Auth + Realtime Database. Build aləti lazım deyil.
 
