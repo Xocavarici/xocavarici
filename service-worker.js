@@ -1,4 +1,4 @@
-const CACHE = "alvero-v3";
+const CACHE = "alvero-v4";
 const SHELL = ["./", "./index.html", "./app.css", "./app.js", "./firebase.js", "./manifest.json", "./icon.svg", "./logo-mark.png", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -13,7 +13,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname.endsWith("admin.html")) return;
   e.respondWith(
-    fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })
+    fetch(req, { cache: "no-cache" }).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })
       .catch(() => caches.match(req).then(r => r || caches.match("./index.html")))
   );
 });
